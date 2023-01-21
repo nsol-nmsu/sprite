@@ -16,8 +16,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef ICENS_TCP_SERVER
-#define ICENS_TCP_SERVER
+#ifndef BLANC
+#define BLANC
 
 #include <unordered_map>
 
@@ -28,6 +28,8 @@
 #include "ns3/traced-callback.h"
 #include "ns3/address.h"
 #include "ns3/blanc-header.h"
+#include "ns3/socket.h"
+#include "ns3/packet.h"
 
 namespace ns3 {
 
@@ -90,17 +92,19 @@ public:
   void HandleSuccessClose(Ptr<Socket> s);
 
   //BLANCpp Function
-  void processPacket(Ptr<Packet> p){
+  void processPacket(Ptr<Packet> p, Ptr<Socket> s){
      blancHeader packetHeader;
      p->RemoveHeader(packetHeader);
      uint32_t pType = packetHeader.GetPacketType();
 	  
      if (pType == 0 || pType == 4  || pType == 10)
-        onFindPacket(p, packetHeader);
+        onFindPacket(p, packetHeader, s);
+     if (pType == 5)
+	onFindReply(p, packetHeader);
      if (pType == 1)
         onHoldPacket(p, packetHeader);
      if (pType == 2)
-	onHoldRecvPacket(p, packetHeader);
+	onHoldRecvPacket(p, packetHeader, s);
      if (pType == 3)
 	onPayPacket(p, packetHeader);
      
@@ -108,9 +112,11 @@ public:
 
   void onHoldPacket(Ptr<Packet> p, blancHeader ph);
 
-  void onHoldRecvPacket(Ptr<Packet> p, blancHeader ph);
+  void onHoldRecvPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
-  void onFindPacket(Ptr<Packet> p, blancHeader ph);
+  void onFindPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
+
+  void onFindReply(Ptr<Packet> p, blancHeader ph);
 
   void onPayPacket(Ptr<Packet> p, blancHeader ph);
 
@@ -127,12 +133,18 @@ public:
 
   void sendPayPacket(uint32_t txID);
 
-  void sendFindReply(uint32_t txID){};
+  void sendFindReply(uint32_t txID, uint32_t secret, double amount);
 
   uint32_t
   createTxID(uint32_t txID);
 
-  void forwardPacket(blancHeader packetHeader, std::string nextHop);
+  void forwardPacket(blancHeader packetHeader, std::string nextHop){
+     forwardPacket(packetHeader,nextHop,"");
+  };
+
+  void forwardPacket(blancHeader packetHeader, std::string nextHop, std::string payload);
+
+  void forwardPacket(blancHeader packetHeader, Ptr<Socket> socket, std::string payload);  
 
   bool hasHoldRecv(uint32_t txID);
 
@@ -172,6 +184,32 @@ protected:
 
 private:
 
+
+std::vector<std::string>
+SplitString( std::string strLine, char delimiter ) {
+   std::string str = strLine;
+   std::vector<std::string> result;
+   uint32_t i =0;
+   std::string buildStr = "";
+
+   for ( i = 0; i<str.size(); i++) {
+      if ( str[i]== delimiter ) {
+         result.push_back( buildStr );
+	 buildStr = "";
+      }
+      else {
+   	      buildStr += str[i];
+      }
+   }
+
+   if(buildStr!="")
+      result.push_back( buildStr );
+
+   return result;
+};
+
+
+
   virtual void StartApplication (void);
   virtual void StopApplication (void);
 
@@ -202,6 +240,8 @@ private:
   std::unordered_map<uint32_t, uint32_t> txIDTable;
   std::unordered_map<uint32_t, std::string> nextRHTable;
   std::unordered_map<uint32_t, bool> pendingTx;
+  std::unordered_map<uint32_t, Ptr<Socket>> srcMap;
+  std::unordered_map<uint32_t, std::string> destMap;
 
   //Transaction Pair atributes
   bool TiP = false;

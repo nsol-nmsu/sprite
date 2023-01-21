@@ -19,7 +19,6 @@
  */
 
 #include "blanc-app-helper.hpp"
-#include "ns3/BLANC++.hpp"
 #include "ns3/uinteger.h"
 #include "ns3/string.h"
 

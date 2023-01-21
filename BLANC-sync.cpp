@@ -65,7 +65,7 @@ BLANCSync::injectPackets( ) {
    }
    uint32_t txID = rand()%10000;
    uint32_t secret = rand()%10000;
-   std::cout<<"Here I is "<<txID<<" "<<secret<<std::endl;
+   std::cout<<"Starting tansaction "<<txID<<" "<<secret<<"\n\n"<<std::endl;
 
    txIDmap[txID].push_back(0);
    txIDmap[txID].push_back(6);
@@ -92,16 +92,17 @@ BLANCSync::addSender( int node, Ptr<BLANCpp> sender ) {
 
 
 
-//TODO add amount
+//TODO Change to Phase switching
 void
 BLANCSync::onFindReplyPacket( uint32_t node, uint32_t txID, double amount){
-   //if (txIDmap[txID][0] == node)
    txID = T_SMap[txID]; 
 
-   if (1 == node)
+   std::cout<<"Ummm "<<txID<<std::endl;
+
+   if (txIDmap[txID][0] == node)
       FRMap[txID][0] = true;
    //else if (txIDmap[txID][1] == node)
-   else if (2 == node)
+   else if (txIDmap[txID][1] == node)
       FRMap[txID][1] = true;
 
    if (FRMap[txID][0] == true && FRMap[txID][1] == true){
@@ -136,7 +137,7 @@ BLANCSync::onPayPacket( uint32_t node, uint32_t txID){
      senders[node1]->reset(txID);
      senders[node2]->reset(txID);
 
-     std::cout<<"All finished\n";
+     std::cout<<"All finished\n\n\n";
   } 
 }
 

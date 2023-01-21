@@ -28,7 +28,7 @@
 #include "ns3/ndnSIM-module.h"
 #include "ndn-synchronizer.hpp"
 
-#include "ns3/BLANC++.h"
+#include "ns3/BLANC++.hpp"
 
 namespace ns3 {
 namespace ndn {

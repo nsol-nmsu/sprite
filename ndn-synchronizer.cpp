@@ -81,26 +81,25 @@ Synchronizer::syncEvent() {
 std::vector<std::string> 
 Synchronizer::SplitString( std::string strLine, int limit ) {
 
-	std::string str = strLine;
-	std::vector<std::string> result;
-	std::istringstream isstr( str );
-	int i = 0;
-	std::string finalStr = "";
+   std::string str = strLine;
+   std::vector<std::string> result;
+   std::istringstream isstr( str );
+   int i = 0;
+   std::string finalStr = "";
 
-	for ( std::string str; isstr >> str;  ) {
+   for ( std::string str; isstr >> str;  ) {
+      if ( i < limit || limit == 0 ) {
+         result.push_back( str );
+      } else { 
+         finalStr += str;
+      }
 
-		if ( i < limit || limit == 0 ) {
-			result.push_back( str );
-		} else { 
-			finalStr += str;
-		}
+      i++;
+   }
 
-		i++;
-	}
+   result.push_back( finalStr );
 
-	result.push_back( finalStr );
-
-	return result;
+   return result;
 }
 
 }	// end of namespace ndn
