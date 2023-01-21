@@ -32,7 +32,7 @@
 #include "ns3/point-to-point-net-device.h"
 #include "ns3/drop-tail-queue.h"
 #include "ns3/netanim-module.h"
-#include "ns3/blanc-app-helper.h"
+#include "ns3/blanc-app-helper.hpp"
 #include "src/ndnSIM/apps/BLANC-sync.hpp"
 #include <unordered_map>
 namespace ns3 {
@@ -282,7 +282,7 @@ int main (int argc, char *argv[])
 
 
   //Run actual simulation
-  Simulator::Stop (Seconds(10.0));
+  Simulator::Stop (Seconds(2.0));
   Simulator::Run ();
   Simulator::Destroy ();
 
