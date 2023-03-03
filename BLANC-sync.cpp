@@ -109,8 +109,8 @@ BLANCSync::onFindReplyPacket( uint32_t node, uint32_t txID, double amount){
       uint32_t node1 = txIDmap[txID][0];
       uint32_t node2 = txIDmap[txID][1];
       
-      senders[node1]->sendHoldPacket(txID, amount);
-      senders[node2]->sendHoldPacket(txID, amount);
+      senders[node1]->sendHoldPacket(txID, amount/2);
+      senders[node2]->sendHoldPacket(txID, amount/2);
    }
 }
 

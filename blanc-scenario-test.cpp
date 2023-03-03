@@ -247,7 +247,7 @@ int main (int argc, char *argv[])
 		}
 		else if(costTable == true) {
 		   netParams = SplitString(strLine);
-                   sync.setPathWeight(std::stoi(netParams[0]), netParams[1], std::stod(netParams[2]) );
+                   sync.setNeighborCredit(std::stoi(netParams[0]), netParams[1], std::stod(netParams[2]) );
                 }
 		else {
 			//std::cout << "reading something else " << strLine << std::endl;

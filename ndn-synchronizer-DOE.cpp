@@ -43,7 +43,7 @@
 
 using namespace std;
 
-#define SERVER_PORT htons( 5012 )
+#define SERVER_PORT htons( 5005 )
 #define CONNECTIONS 1
 #define DEBUG 0
 #define LOSS 500
@@ -75,22 +75,26 @@ SyncDOE::syncEvent(){
 void
 SyncDOE::addArrivedPackets( std::string str ) {
 
-  std::vector<std::string> updateInfo = SplitString( str, 3 );
+  std::vector<std::string> updateInfo = SplitString( str, 4 );
   json::iterator it = rjf.begin();
 
   // Check if the sending packet is a lead DER. If not update running measurment json.
+  
   if ( LeadDERs[updateInfo[1]] == false &&  updateInfo[3] != "RedisPV" ){
+
+//  if ( LeadDERs[updateInfo[1]] == false && !setpoint ){	  
     //std::cout<<"\nReDis-PV node ( ns3 ) received measurement data from non-PV devices\n";
 
-
+    bool updated = false;
     while ( it !=  rjf.end() ) {
 
       if ( it.key() != "Time" && it.value().find( updateInfo[1] ) != it.value().end()) {
 
-	//&& it.value()[updateInfo[1]].begin() != it.value()[updateInfo[1]].end()) {
-        it.value()[updateInfo[1]] = njf[it.key()][updateInfo[1]];
-	//rSend[it.key()][updateInfo[1]] = njf[it.key()][updateInfo[1]];
+        //rjf[it.key()][updateInfo[1]] = it.value()[updateInfo[1]];
+	it.value()[updateInfo[1]] = njf[it.key()][updateInfo[1]];
         it = rjf.end();
+	updated = true;
+	return;
       } else {
         it++;
       }
@@ -101,7 +105,6 @@ SyncDOE::addArrivedPackets( std::string str ) {
 
     //std::cout<<"\nReDis-PV node ( ns3 ) received measurement data from PV Lead DERs\n";
   }
-
   // Push packet information into vector for later processing.
   arrivedPackets.push_back( str );
 }
@@ -193,6 +196,8 @@ SyncDOE::sendSync() {
 
   json j;
   json openSend;
+  if(OSendTemp.dump() != "{}")
+	  openSend["Switchpositions"] = OSendTemp["Switchpositions"];
 
   // Process all the saved strings with packet arrival information and send any relevent data.
   while ( !arrivedPackets.empty() ) {
@@ -201,18 +206,19 @@ SyncDOE::sendSync() {
     // If data is from ReDis-PV, add to json string for OpenDSS.
     //std::cout<<arrivedPackets.back()<<std::endl;
     if ( SendInfo[3] == "RedisPV" ) {
-      openSend[SendInfo[1]] = SendInfo[4];
+      openSend["setpoints"][SendInfo[1]] = SendInfo[4];
     } 
     else if ( LeadDERs[SendInfo[1]] == true  && SendInfo[4] != "") {
 
       // Update running json file with data that arrived at ReDis-PV from OpenDSS.
-      if ( DEBUG ) std::cout << "............Updating................\n";
+      if ( DEBUG ) {
+         std::cout << "............Updating................\n";
+	 std::cout<<"Lead Json: "<<SendInfo[4]<<"\n"<<arrivedPackets.back()<<std::endl;
+      }
 
-      //std::cout<<"Lead Json: "<<SendInfo[4]<<"\n"<<arrivedPackets.back()<<std::endl;
       json leadJson = json::parse( SendInfo[4] );
       //std::cout << leadJson.dump(2) << std::endl;
       json::iterator itLead = leadJson.begin();
-
       while ( itLead != leadJson.end() ) {
 
         if ( rjf["Storage"].find( itLead.key() ) != rjf["Storage"].end() ) {
@@ -228,7 +234,6 @@ SyncDOE::sendSync() {
 
           if ( DEBUG ) std::cout << rjf["PVSystem"][itLead.key()] << "\n..............PVSystem.................\n";
         }
-
         itLead++;
       }
     }
@@ -243,28 +248,20 @@ SyncDOE::sendSync() {
   // Send updated json files to OpenDss and ReDis-PV.
   //if ( Simulator::Now().GetSeconds() <= 5 )
   send_json = rjf.dump();
-  //else 
-  //   send_json = rSend.dump();
+  //if ( Simulator::Now().GetSeconds() <=10)
+  //	       send_json = njf.dump();
+
+  //send_json = njf.dump();
   
-  /*json::iterator it = rSend.begin();
-  while ( it !=  rSend.end() ) {
-     json::iterator it1 = it.value().begin();
-     while ( it1 !=  it.value().end() ) {
-        it1.value().clear();
-	it1++;
-     }
-     it++;
-  }*/
-
-
   std::cout << "Sending measurement.json to Redis-PV" << std::endl;
   //std::cout << "\nsendSync()============================================ Sending to ReDis-PV: \n"<<send_json<< std::endl;
   socket.sendData( send_json, 'R' );
 
   send_json = openSend.dump();
+  //send_json = OSendTemp.dump();
 
   std::cout << "Sending arrived DER ( at ns3 ) information to OpenDSS" << std::endl;
-  std::cout << "\nsendSync()============================================ Sending to OpenDSS: \n"<<openSend<< std::endl;
+  //std::cout << "\nsendSync()============================================ Sending to OpenDSS: \n"<<openSend<< std::endl;
   socket.sendData( send_json, 'O' );
 }
 
@@ -273,29 +270,20 @@ void
 SyncDOE::receiveSync() {
 
   std::string data = socket.receiveData('O' );
-  std::cout << "\nreceiveSync()============================================ Data from OpenDSS: \n"<<data<< std::endl;
+  //std::cout << "\nreceiveSync()============================================ Data from OpenDSS: \n"<<data.size()<< " bytes" << std::endl;
 
   njf = json::parse( data );
 
   std::cout << "\nMeasurement data received from OpenDSS, size: " << data.size() << " bytes" << std::endl;
   //std::cout <<njf<< std::endl;
-  //rSend = njf;
-  if ( Simulator::Now().GetSeconds() == 0 ) 
-     rjf = njf;
-  /*json::iterator it = rSend.begin();
-  while ( it !=  rSend.end() ) {
-     json::iterator it1 = it.value().begin();
-     while ( it1 !=  it.value().end() ) {
-        it1.value().clear();
-        it1++;
-     }
-     it++;
-  }*/
+  rSend = njf;
+  //if ( Simulator::Now().GetSeconds() == 0 || Simulator::Now().GetSeconds() == 5) 
+  //   rjf = njf;
 
   data = socket.receiveData( 'R' );
   //std::cout << "\nreceiveSync()============================================ Data from ReDis-PV: \n"<<data<< std::endl;
   OSendTemp = json::parse( data );
-  int time = parOpen.processJson( njf, &packetNames );
+  double time = parOpen.processJson( njf, &packetNames );
 
   if(time != 0){
      rjf["Time"] = time;

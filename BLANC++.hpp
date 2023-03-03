@@ -59,6 +59,32 @@ public:
   typedef void (* OnHoldTraceCallback) (uint32_t nodeid, uint32_t txID, bool received);
   typedef void (* OnPayTraceCallback) (uint32_t nodeid, uint32_t txID);
 
+  
+   struct Neighbor {            // Structure declaration
+      Ipv4Address address;
+      Ptr<Socket> socket;
+      double cost;
+      Neighbor() :
+         socket(NULL),
+         cost(0) {}
+   }; 
+
+   struct TransactionInfo {             // Structure declaration
+      uint32_t nextTxID;         // Member (int variable)
+      std::string nextHop;   // Member (string variable)
+      std::string nextDest;
+      double pending;
+      Ptr<Socket> src;
+      std::string dest;
+      TransactionInfo() :
+         nextTxID(0),
+         nextHop(""),
+         nextDest(""),
+         pending(0),
+         src(NULL),
+         dest("") {}
+   };    
+
   static TypeId GetTypeId (void);
   BLANCpp ();
   virtual ~BLANCpp ();
@@ -90,25 +116,18 @@ public:
   *
   */
   void HandleSuccessClose(Ptr<Socket> s);
-
-  //BLANCpp Function
-  void processPacket(Ptr<Packet> p, Ptr<Socket> s){
-     blancHeader packetHeader;
-     p->RemoveHeader(packetHeader);
-     uint32_t pType = packetHeader.GetPacketType();
-	  
-     if (pType == 0 || pType == 4  || pType == 10)
-        onFindPacket(p, packetHeader, s);
-     if (pType == 5)
-	onFindReply(p, packetHeader);
-     if (pType == 1)
-        onHoldPacket(p, packetHeader);
-     if (pType == 2)
-	onHoldRecvPacket(p, packetHeader, s);
-     if (pType == 3)
-	onPayPacket(p, packetHeader);
-     
+  
+  //Incoming Packet handling 
+  enum PacketType { 
+      Find =      0, 
+      FindRecv =  1,
+      FindReply = 2,
+      Hold =      3,
+      HoldRecv =  4,
+      Pay =       5
   };
+
+  void processPacket(Ptr<Packet> p, Ptr<Socket> s);
 
   void onHoldPacket(Ptr<Packet> p, blancHeader ph);
 
@@ -123,10 +142,14 @@ public:
 
   //Transaction Functions
   bool getTiP(){ return TiP; }; 
+
   void startTransaction(uint32_t txID, uint32_t secret, std::vector<std::string> peerlist, bool payer);
 
   void reset(uint32_t txID);
 
+  uint32_t createTxID(uint32_t txID);
+
+  //Packet fowarding
   void sendFindPacket(uint32_t txID, uint32_t secret);
 
   void sendHoldPacket(uint32_t txID, double amount);
@@ -134,9 +157,6 @@ public:
   void sendPayPacket(uint32_t txID);
 
   void sendFindReply(uint32_t txID, uint32_t secret, double amount);
-
-  uint32_t
-  createTxID(uint32_t txID);
 
   void forwardPacket(blancHeader packetHeader, std::string nextHop){
      forwardPacket(packetHeader,nextHop,"");
@@ -146,10 +166,7 @@ public:
 
   void forwardPacket(blancHeader packetHeader, Ptr<Socket> socket, std::string payload);  
 
-  bool hasHoldRecv(uint32_t txID);
-
-  void sendRoutingInfo();
-
+  //Block Chain Functions
   void updateBCFind(uint32_t txID){};
 
   void updateBCHold(uint32_t txID){};
@@ -158,35 +175,29 @@ public:
 
   void updateBCPay(uint32_t txID){};  
 
-  void updatePathWeight(std::string src, double amount){
-     costTable[src] -= amount;
+  void updatePathWeight(std::string name, double amount){
+      neighborTable[name].cost -= amount;
   };
-
-  void insertTimeout(uint32_t txID, std::string src, uint64_t timeout){};
+  
+  //Routing Functions
+  void sendRoutingInfo();
 
   void setFindTable(std::string RH, std::string nextHop){
      findRHTable[RH] = nextHop;
   };
 
-  void setPathWeight(std::string nextHop, double amount){
-     costTable[nextHop] = amount;
-  };
+  void setNeighborCredit(std::string name, double amount);
 
-  void setAddressTable(std::string name, Ipv4Address address){
-     addressTable[name] = address;
-  };
+  void setNeighbor(std::string name, Ipv4Address address);
+
+  //Utility Functions
+  bool hasHoldRecv(uint32_t txID);
+
+  void insertTimeout(uint32_t txID, std::string src, uint64_t timeout){};
 
   Ptr<Socket> getSocket(std::string dest);
 
-
-protected:
-  virtual void DoDispose (void);
-
-private:
-
-
-std::vector<std::string>
-SplitString( std::string strLine, char delimiter ) {
+  std::vector<std::string> SplitString( std::string strLine, char delimiter ) {
    std::string str = strLine;
    std::vector<std::string> result;
    uint32_t i =0;
@@ -208,7 +219,10 @@ SplitString( std::string strLine, char delimiter ) {
    return result;
 };
 
+protected:
+  virtual void DoDispose (void);
 
+private:
 
   virtual void StartApplication (void);
   virtual void StopApplication (void);
@@ -217,7 +231,6 @@ SplitString( std::string strLine, char delimiter ) {
 
   uint16_t m_local_port;
   bool m_running;
-  uint32_t m_subscription; //!< Subscription value of packet
   Ipv4Address m_local_ip;
   Ptr<Socket> m_socket;
   uint32_t m_packet_size;
@@ -232,21 +245,16 @@ SplitString( std::string strLine, char delimiter ) {
   std::string m_name;
   std::string nextRH;
   uint32_t m_txID = 0;
-  std::unordered_map<std::string, Ipv4Address> addressTable;
-  std::unordered_map<std::string, Ptr<Socket>> m_sockets;
-  std::unordered_map<std::string, double> costTable;
-  std::unordered_map<uint32_t, std::string> nextHopTable; //Given a sub_tx_ID, find the Dest
   std::unordered_map<std::string, std::string> findRHTable;
-  std::unordered_map<uint32_t, uint32_t> txIDTable;
-  std::unordered_map<uint32_t, std::string> nextRHTable;
-  std::unordered_map<uint32_t, bool> pendingTx;
-  std::unordered_map<uint32_t, Ptr<Socket>> srcMap;
-  std::unordered_map<uint32_t, std::string> destMap;
+  
+  std::unordered_map<uint32_t, TransactionInfo> txidTable; 
+  std::unordered_map<std::string, Neighbor>  neighborTable; 
 
   //Transaction Pair atributes
   bool TiP = false;
 
 
+  //Callbacks
   TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t, uint32_t, Ipv4Address> m_receivedPacket;
   TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t> m_sentPacket;
   TracedCallback<uint32_t, uint32_t, double> m_onFindReply;

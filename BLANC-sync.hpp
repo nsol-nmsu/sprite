@@ -81,14 +81,14 @@ public:
      senders[node]->setFindTable(RH, nextHop);
   };
 
-  void setPathWeight(uint32_t node, std::string nextHop, double amount){
-     senders[node]->setPathWeight(nextHop, amount);
+  void setNeighborCredit(uint32_t node, std::string name, double amount){
+     senders[node]->setNeighborCredit(name, amount);
   };
 
   void setAddressTable(std::string name, Ipv4Address address){
      int i = 0;
      for (i = 0; i < senders.size(); i++){
-         senders[i]->setAddressTable(name, address);
+         senders[i]->setNeighbor(name, address);
      }
   };
 

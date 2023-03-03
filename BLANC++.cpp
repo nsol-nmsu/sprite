@@ -91,7 +91,6 @@ BLANCpp::BLANCpp ()
    NS_LOG_FUNCTION_NOARGS ();
    m_socket = 0;
    m_running = false;
-   m_subscription = 0;
  }
  
 BLANCpp::~BLANCpp()
@@ -182,7 +181,7 @@ BLANCpp::ReceivePacket (Ptr<Socket> s)
      	  s->Send (packet_copy);
       }
           // Callback for received packet
-    	  m_receivedPacket (GetNode()->GetId(), packet, from, m_local_port, m_subscription, m_local_ip);
+    	  m_receivedPacket (GetNode()->GetId(), packet, from, m_local_port, 0, m_local_ip);
       
      }
  }
@@ -205,9 +204,38 @@ void BLANCpp::HandleSuccessClose(Ptr<Socket> s)
        MakeNullCallback<void, Ptr<Socket> > () );
  }
 
+//SECTION: Incoming Packet handling 
+void 
+BLANCpp::processPacket(Ptr<Packet> p, Ptr<Socket> s){
+   blancHeader packetHeader;
+   p->RemoveHeader(packetHeader);
+   uint32_t pType = packetHeader.GetPacketType();
+	  
+   switch(pType){
+      case Find:
+      case FindRecv:
+      case 10:
+         onFindPacket(p, packetHeader, s);
+         break;
+      case FindReply:
+	      onFindReply(p, packetHeader);
+         break;
+      case Hold:
+         onHoldPacket(p, packetHeader);
+         break;
+      case HoldRecv:
+         onHoldRecvPacket(p, packetHeader, s);
+         break;
+      case Pay:
+         onPayPacket(p, packetHeader);
+         break;
+      default:
+         break;
+   }
+}
 
- //SECTION
-void BLANCpp::onHoldPacket(Ptr<Packet> p, blancHeader ph)
+void 
+BLANCpp::onHoldPacket(Ptr<Packet> p, blancHeader ph)
  {
 
    uint8_t buffer[p->GetSize()];
@@ -224,12 +252,11 @@ void BLANCpp::onHoldPacket(Ptr<Packet> p, blancHeader ph)
    std::vector<std::string> items = SplitString(payload, '|');
    uint32_t txID = std::stoi(items[0]);
    uint32_t oldTxID = std::stoi(items[1]);
-   std::string dest = destMap[oldTxID];
-   destMap.erase(oldTxID);
+   std::string dest = txidTable[oldTxID].dest;
    double amount = std::stod(items[2]);
-   //uint32_t secret = std::stoi(items[3]);
    uint64_t timeout = std::stoi(items[4]);
 
+   std::cout << m_name <<"  NodeID "<<std::endl;
    std::cout << txID <<"  TXiD "<<std::endl;
    std::cout << oldTxID <<" TXiDPrime "<<std::endl;   
    std::cout << dest <<std::endl;
@@ -238,52 +265,47 @@ void BLANCpp::onHoldPacket(Ptr<Packet> p, blancHeader ph)
    //Get all values from packet
    std::string src = "";//REPLACE	 
    std::string nextHop = "";
-  
-   if (pendingTx.find(txID) != pendingTx.end()) {
+
+   if ( txidTable.find(txID) != txidTable.end() && txidTable[txID].pending != 0) {
+
       if(hasHoldRecv(oldTxID)) {
-         updatePathWeight(src, amount);
-         insertTimeout(txID, src, timeout);
-	 updateBCHold(txID);
+	      updateBCHold(txID);
          m_onHold(std::stoi(m_name), txID, false);	 
       }
       return;
    }
 
-   if(m_name != dest){
-      nextHop = nextHopTable[oldTxID];
-      nextHopTable.erase(oldTxID);
-      nextHopTable[txID] = nextHop;
-   }
-
-   pendingTx[txID] = amount;
-
-   updatePathWeight(src, amount);
-   insertTimeout(txID, src, timeout);
 
    uint32_t nextTxID = oldTxID;
    //Create next hold packet
    //Ptr<Packet> packet_copy = Create<Packet> (m_packet_size);
+   //TODO: Create return setting
    if(m_route_helper && m_name == dest){
 
       //Update Transaction Table
-      //txIDTable[txID] = txIDTable[oldTxID];	   
-      nextTxID = txIDTable[oldTxID];
-      txIDTable.erase(oldTxID);
+      nextTxID = txidTable[oldTxID].nextTxID;
+      TransactionInfo entry = txidTable[oldTxID];
+      txidTable.erase(oldTxID);
+      txidTable[txID] = entry;      
 
       //Update next hop and Router Helper Destination
-      nextHop = nextHopTable[nextTxID];
-      nextHopTable.erase(nextTxID);
-      nextHopTable[txID] = nextHop;
-      dest = nextRHTable[nextTxID];
-      nextRHTable.erase(nextTxID);
-      nextRHTable[txID] = dest;
+      nextHop = txidTable[txID].nextHop;
+      dest = txidTable[txID].nextDest;
 
       //Send out BC message, affirming hold.
       updateBCHold(txID);
    }
+   else if(m_name != dest){
+      nextHop = txidTable[oldTxID].nextHop;
+      TransactionInfo entry = txidTable[oldTxID];
+      txidTable.erase(oldTxID);
+      txidTable[txID] = entry;
+   }
+
+   txidTable[txID].pending = amount;
 
    blancHeader packetHeader;
-   packetHeader.SetPacketType(1);
+   packetHeader.SetPacketType(Hold);
 
    payload = std::to_string(txID) + "|";
    payload += std::to_string(nextTxID) + "|";
@@ -291,6 +313,8 @@ void BLANCpp::onHoldPacket(Ptr<Packet> p, blancHeader ph)
    payload += "en|";
    payload += "5";
    
+   updatePathWeight(nextHop, amount);
+   insertTimeout(txID, nextHop, timeout);
 
    //Forward next hold packet
    forwardPacket(packetHeader, nextHop, payload);
@@ -301,7 +325,8 @@ void BLANCpp::onHoldPacket(Ptr<Packet> p, blancHeader ph)
    
  }
 
-void BLANCpp::onFindPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s){
+void 
+BLANCpp::onFindPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s){
 
    //Get all values from packet
    std::string src = "";//REPLACE
@@ -323,12 +348,12 @@ void BLANCpp::onFindPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s){
    uint32_t txID = std::stoi(items[0]);
    std::string path = items[1];
    std::string dest = SplitString(path, ',')[0];
-   destMap[txID] = dest;
+   txidTable[txID].dest = dest;
    double amount = std::stod(items[2]);
    uint32_t secret = std::stoi(items[3]);
    uint64_t timeout = std::stoi(items[4]);
 
-   srcMap[txID] = s;
+   txidTable[txID].src = s;
 
    std::cout << "Node "<<m_name<<std::endl;
    std::cout << txID <<"  TXiD "<<std::endl;
@@ -339,54 +364,51 @@ void BLANCpp::onFindPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s){
    
    if(m_name != dest){
       nextHop = findRHTable[dest];
-      nextHopTable[txID] = nextHop;
+      txidTable[txID].nextHop = nextHop;
    }    
-
       
-
    insertTimeout(txID, src, timeout);
 
    //Create next find packet
    //Ptr<Packet> packet_copy = Create<Packet> (m_packet_size);
    if(m_route_helper && m_name == dest){
 
-      if ( txIDTable.find(secret) != txIDTable.end() ){
-         txIDTable[txID] = txIDTable[secret];
-	 txIDTable[ txIDTable[secret] ] = txID;
-	 txIDTable.erase(secret);
-      }	  
+      if ( txidTable.find(secret) != txidTable.end() ){
+         txidTable[txID].nextTxID = txidTable[secret].nextTxID;
+	      txidTable[ txidTable[secret].nextTxID ].nextTxID = txID;
+	      txidTable.erase(secret);
+      }	    
       else {
-         txIDTable[secret] = txID;
+         txidTable[secret].nextTxID = txID;
       }
+   //txidTable[txID].src = s;
 
-      if (type == 0){
+      if (type == Find){
 
          //Update Transaction Table
          uint32_t nextTxID = createTxID(txID);
-   	 txIDTable[txID] = nextTxID;
-    	 txID = nextTxID;
+   	 txidTable[txID].nextTxID = nextTxID;
+    	 //txID = nextTxID;
 
    	 type = 10;
 
    	 //Update next hop and Router Helper Destination  
 	 dest = SplitString(path, ',')[1];
 	 nextHop = findRHTable[dest];
-   	 nextHopTable[txID] = nextHop;
-   	 nextRHTable[txID] = dest;
+      txidTable[txID].nextHop = nextHop;
+      txidTable[txID].nextDest = dest;
+      
+      txID = nextTxID;
 	 path = dest;
       }
       else {
          //Send out BC message, affirming hold. TODO: Confirm if all do this or only RHs.
          updateBCFind(txID);	     
-	 //TODO move to find reply
-	 //if(amount > costTable[nextHop]) amount = costTable[nextHop];
 	 if (type == 10){
 	    sendFindReply(txID, secret, amount);		 
-	    //m_onFindReply(1, secret, amount);
 	 }
 	 else{
             sendFindReply(txID, secret, amount);		 
-            //m_onFindReply(2, secret, amount);
 	 }
 
          return;
@@ -401,7 +423,7 @@ void BLANCpp::onFindPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s){
    payload += "|";
 
    std::cout<<dest<<std::endl;
-   if(amount > costTable[nextHop]) amount = costTable[nextHop];
+   if(amount > neighborTable[nextHop].cost) amount = neighborTable[nextHop].cost;
       payload += std::to_string(amount) + "|";
 
    payload += std::to_string(secret) + "|";
@@ -415,9 +437,8 @@ void BLANCpp::onFindPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s){
    updateBCFind(txID);
 }
 
-
-
-void BLANCpp::onHoldRecvPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
+void 
+BLANCpp::onHoldRecvPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
  { 
 
    uint8_t buffer[p->GetSize()];
@@ -434,13 +455,13 @@ void BLANCpp::onHoldRecvPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
    std::vector<std::string> items = SplitString(payload, '|');
    uint32_t txID = std::stoi(items[0]);
    uint32_t oldTxID = std::stoi(items[1]);
-   std::string dest = destMap[oldTxID];
-   destMap.erase(oldTxID);
+   std::string dest = txidTable[oldTxID].dest;
    double amount = std::stod(items[2]);
-   //uint32_t secret = std::stoi(items[3]);
    uint64_t timeout = std::stoi(items[4]);
 
-   srcMap[txID] = s;
+   txidTable[txID].src = s;
+
+   std::cout << m_name <<"  NodeID "<<std::endl;
 
    std::cout << txID <<"  TXiD "<<std::endl;
    std::cout << oldTxID <<" TXiDPrime "<<std::endl;
@@ -450,25 +471,20 @@ void BLANCpp::onHoldRecvPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
    std::string src = "";//REPLACE
    std::string nextHop = "";
 
-   if (pendingTx.find(txID) != pendingTx.end()) return;
+   if ( txidTable.find(txID) != txidTable.end() && txidTable[txID].pending != 0) return;
 
    if(m_name != dest){
-      nextHop = nextHopTable[oldTxID];
-      nextHopTable.erase(oldTxID);
-      //nextHopTable[txID] = nextHop;
+      nextHop = txidTable[oldTxID].nextHop;
+      txidTable.erase(oldTxID);
    }
 
-   pendingTx[txID] = amount;
-
-   updatePathWeight(src, amount);
-   insertTimeout(txID, src, timeout);
+   txidTable[txID].pending = amount;
 
    //Create next hold packet
-   //Ptr<Packet> packet_copy = Create<Packet> (m_packet_size);
    if(!m_route_helper || m_name != dest){
 
       blancHeader packetHeader;
-      packetHeader.SetPacketType(2);
+      packetHeader.SetPacketType(HoldRecv);
 
       payload = std::to_string(txID) + "|";
       payload += std::to_string(oldTxID) + "|";
@@ -476,6 +492,8 @@ void BLANCpp::onHoldRecvPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
       payload += "en|";
       payload += "5";
       
+      updatePathWeight(nextHop, amount);
+      insertTimeout(txID, nextHop, timeout);
 
       //Forward next hold packet
       forwardPacket(packetHeader, nextHop, payload);
@@ -486,7 +504,9 @@ void BLANCpp::onHoldRecvPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
       m_onHold(std::stoi(m_name), txID, true);
    }
  }
-void BLANCpp::onFindReply(Ptr<Packet> p, blancHeader ph)
+
+void 
+BLANCpp::onFindReply(Ptr<Packet> p, blancHeader ph)
  {
 
    uint8_t buffer[p->GetSize()];
@@ -513,15 +533,16 @@ void BLANCpp::onFindReply(Ptr<Packet> p, blancHeader ph)
    std::cout << secret <<"  Secret\n"<<std::endl;
 
    blancHeader packetHeader;
-   packetHeader.SetPacketType(5);
+   packetHeader.SetPacketType(FindReply);
 
-   if (srcMap.find(txID) != srcMap.end()){
+   if (txidTable[txID].src != NULL ){
       //Forward next pay packet
-      forwardPacket(packetHeader, srcMap[txID], payload);
+      forwardPacket(packetHeader, txidTable[txID].src, payload);
+      txidTable[txID].src = NULL;
    }
    else if (m_route_helper){
-      for (auto i = txIDTable.begin(); i != txIDTable.end(); i++){
-         if (i->second == txID){
+      for (auto i = txidTable.begin(); i != txidTable.end(); i++){
+         if (i->second.nextTxID == txID){
             sendFindReply(i->first, secret, amount);
 	    return;
 	 }
@@ -532,7 +553,9 @@ void BLANCpp::onFindReply(Ptr<Packet> p, blancHeader ph)
       m_onFindReply(std::stoi(m_name), secret, amount);
    }
  }
-void BLANCpp::onPayPacket(Ptr<Packet> p, blancHeader ph)
+
+void 
+BLANCpp::onPayPacket(Ptr<Packet> p, blancHeader ph)
  {
 
    uint8_t buffer[p->GetSize()];
@@ -552,46 +575,44 @@ void BLANCpp::onPayPacket(Ptr<Packet> p, blancHeader ph)
    uint64_t timeout = std::stoi(items[2]);
       std::string src = "";//REPLACE
 
+   std::cout << m_name <<"  NodeID "<<std::endl;
 
    std::cout << txID <<"  TXiD "<<std::endl;
    std::cout << amount <<"  amount\n"<<std::endl;
+   if ( txidTable.find(txID) == txidTable.end() || txidTable[txID].pending == 0) return;
 
-   if (pendingTx.find(txID) == pendingTx.end()) return;
-
-   pendingTx.erase(txID);
    insertTimeout(txID, src, timeout);
 
    if(m_txID == txID ){
       //Update next hop and Router Helper Destination
       m_onPay(std::stoi(m_name), txID);
       //Send out BC message, affirming hold.
-      updateBCPay(txID);    
+      updateBCPay(txID);  
+        
      return; 
    }
-	
 
-   if (nextHopTable.find(txID) != nextHopTable.end()){
+   if (txidTable[txID].src == NULL ){
       //Create next pay packet
 
-      std::string nextHop = nextHopTable[txID];
-      nextHopTable.erase(txID);//TODO:Move to after BC confirmation
+      std::string nextHop = txidTable[txID].nextHop;
 
       //Forward next pay packet
       blancHeader packetHeader;
-      packetHeader.SetPacketType(3);
+      packetHeader.SetPacketType(Pay);
 
       forwardPacket(packetHeader, nextHop, payload);
    }
-   else if (srcMap.find(txID) != srcMap.end()){
+   else if (txidTable[txID].src != NULL ){
       //Forward next pay packet
       blancHeader packetHeader;
-      packetHeader.SetPacketType(3);
+      packetHeader.SetPacketType(Pay);
 
-      forwardPacket(packetHeader, srcMap[txID], payload);
+      forwardPacket(packetHeader, txidTable[txID].src, payload);
    }
+   txidTable.erase(txID);//TODO:Move to after BC confirmation
 
  }
-
 
 void 
 BLANCpp::forwardPacket(blancHeader packetHeader, std::string nextHop, std::string payload)
@@ -605,7 +626,7 @@ BLANCpp::forwardPacket(blancHeader packetHeader, std::string nextHop, std::strin
   // so that tags added to the packet can be sent as well
 
   //Add Blanc information to packet header and send
-  Address peerAddress = addressTable[nextHop];
+  Address peerAddress = neighborTable[nextHop].address;
   Ptr<Socket> socket = getSocket(nextHop);
 
   p->AddHeader(packetHeader);
@@ -640,19 +661,27 @@ BLANCpp::forwardPacket(blancHeader packetHeader, Ptr<Socket> socket, std::string
   m_seq = m_seq + 1;
 }
 
+void 
+BLANCpp::setNeighborCredit(std::string name, double amount){
+   neighborTable[name].cost = amount;
+}
 
+void
+BLANCpp::setNeighbor(std::string name, Ipv4Address address){
+   neighborTable[name].address = address;
+}
 
 Ptr<Socket> 
 BLANCpp::getSocket(std::string dest)
 {
- Ptr<Socket> socket = m_sockets[ dest ];
+ Ptr<Socket> socket = neighborTable[dest].socket;
 	
  if (socket == 0)
  {
     TypeId tid = TypeId::LookupByName ("ns3::TcpSocketFactory");   
     socket = Socket::CreateSocket (GetNode (), tid);
     socket->Bind();
-    socket->Connect (InetSocketAddress (Ipv4Address::ConvertFrom( addressTable[dest] ), m_peerPort));
+    socket->Connect (InetSocketAddress (Ipv4Address::ConvertFrom( neighborTable[dest].address ), m_peerPort));
 
     socket->SetRecvCallback (MakeCallback (&BLANCpp::ReceivePacket, this));
  }
@@ -663,16 +692,16 @@ BLANCpp::getSocket(std::string dest)
 bool
 BLANCpp::hasHoldRecv(uint32_t txID)
 {
-   uint32_t txIDprime = txIDTable[txID];
-   if ( txIDTable.find(txIDprime) != txIDTable.end() ){
-      txIDTable.erase(txIDprime);
-      txIDTable.erase(txID);
+   uint32_t txIDprime = txidTable[txID].nextTxID;
+      std::cout << txIDprime<< ' ' << txID <<"  NodeID "<<std::endl;
+
+   if ( txidTable.find(txIDprime) != txidTable.end() ){
+      //txidTable.erase(txIDprime);
+      //txidTable.erase(txID);
       return true;
    }
    return false;
 }
-
-
 
 //Transaction Functions
 void 
@@ -680,16 +709,15 @@ BLANCpp::startTransaction(uint32_t txID, uint32_t secret, std::vector<std::strin
 {
    //Determine number of segments and create the needed txIDs.
    std::string NH = findRHTable[peerlist[0]];
-   m_amount = costTable[NH];
+   m_amount = neighborTable[NH].cost;
    m_payer = payer;
-   txIDTable[txID] = createTxID(txID);
-   m_txID = txIDTable[txID];
-   nextRHTable[txID] = peerlist[0];
+   txidTable[txID].nextTxID = createTxID(txID);
+   m_txID = txidTable[txID].nextTxID;
+   txidTable[txID].nextDest = peerlist[0];
    if (payer) nextRH = peerlist[1];
    sendFindPacket(txID, secret);
    TiP = true;
 }
-
 
 void
 BLANCpp::reset(uint32_t txID)
@@ -697,13 +725,11 @@ BLANCpp::reset(uint32_t txID)
    //Determine number of segments and create the needed txIDs.
    m_amount = 0;
    m_payer = false;
-   txIDTable.erase(txID);
+   txidTable.erase(txID);
    m_txID = 0;
-   nextRHTable.erase(txID);
    nextRH = "";
    TiP = false;
 }
-
 
 uint32_t
 BLANCpp::createTxID(uint32_t txID){
@@ -714,28 +740,29 @@ void
 BLANCpp::sendFindReply(uint32_t txID, uint32_t secret, double amount)
 {
    blancHeader packetHeader;
-   packetHeader.SetPacketType(5);
+   packetHeader.SetPacketType(FindReply);
 
    std::string payload = std::to_string(txID) + "|";
    payload += std::to_string(amount) + "|";
    payload += std::to_string(secret);
 
-   forwardPacket(packetHeader, srcMap[txID], payload);
+   forwardPacket(packetHeader, txidTable[txID].src, payload);
+   txidTable[txID].src = NULL;
 }
 
 void
 BLANCpp::sendFindPacket(uint32_t txID, uint32_t secret)
 {
 
-   uint32_t txIDPrime = txIDTable[txID];
-   std::string dest = nextRHTable[txID];
+   uint32_t txIDPrime = txidTable[txID].nextTxID;
+   std::string dest = txidTable[txID].nextDest;
    std::string nextHop = findRHTable[dest]; //Update based on Some table base
-   nextHopTable[txID] = nextHop;
+   txidTable[txID].nextHop = nextHop;
 
    blancHeader packetHeader;
-   packetHeader.SetPacketType(4);
+   packetHeader.SetPacketType(FindRecv);
    if(m_payer)
-      packetHeader.SetPacketType(0);
+      packetHeader.SetPacketType(Find);
 
    std::string payload = std::to_string(txIDPrime) + "|";
    payload += dest;
@@ -753,21 +780,20 @@ BLANCpp::sendFindPacket(uint32_t txID, uint32_t secret)
 void 
 BLANCpp::sendHoldPacket(uint32_t txID, double amount)
 {
-   uint32_t txIDPrime = txIDTable[txID];
-   txIDTable.erase(txID);
-   std::string dest = nextRHTable[txID];
-   //nextRHTable.erase(txID);
-   std::string nextHop = nextHopTable[txID];
+   uint32_t txIDPrime = txidTable[txID].nextTxID;
+   std::cout<<txIDPrime<<" Let's see the issue.\n";
+   std::string dest = txidTable[txID].nextDest;
+   std::string nextHop = txidTable[txID].nextHop;
+
    m_amount = amount;
 
    blancHeader packetHeader;
    if(m_payer){
-      packetHeader.SetPacketType(1);
+      packetHeader.SetPacketType(Hold);
    }
    else { 
-      packetHeader.SetPacketType(2);
-      pendingTx[txID] = amount;
-      nextHopTable.erase(txID);
+      packetHeader.SetPacketType(HoldRecv);
+      txidTable[txID].pending = amount;
       m_txID = txID;
    }
 
@@ -777,21 +803,24 @@ BLANCpp::sendHoldPacket(uint32_t txID, double amount)
    payload += "ENC|";
    payload += "5";
 
+   int timeout = 5;
+   updatePathWeight(nextHop, amount);
+   insertTimeout(txID, nextHop, timeout);
+
    forwardPacket(packetHeader, nextHop, payload);
    std::cout<<"Hold phase\n\n\n";
 }
-
 
 void 
 BLANCpp::sendPayPacket(uint32_t txID)
 {
    std::cout<<"Pay phase \n\n\n";
 
-   std::string nextHop = nextHopTable[txID];
-   nextHopTable.erase(txID);
+   std::string nextHop = txidTable[txID].nextHop;
+   txidTable.erase(txID);
 
    blancHeader packetHeader;
-   packetHeader.SetPacketType(3);
+   packetHeader.SetPacketType(Pay);
    std::string payload = std::to_string(txID) + "|";
    payload += std::to_string(m_amount) + "|";
    payload += "5";
@@ -799,7 +828,6 @@ BLANCpp::sendPayPacket(uint32_t txID)
    forwardPacket(packetHeader, nextHop, payload);
 }
 
-
- } // Namespace ns3
+} // Namespace ns3
 
 

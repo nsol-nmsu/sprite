@@ -90,10 +90,13 @@ public:
    */
   void
   injectInterests( bool agg, bool set ) {
+     double seconds = 0.0;
+     double step = 0.0005;
      while ( !packetNames.empty() ) {
         std::vector<std::string> packetInfo = SplitString( packetNames.back(), 2 );
-        Simulator::ScheduleWithContext( std::stoi( packetInfo[1] ), Seconds( 0.0 ), &ConsumerQos::SendPacket, 
+        Simulator::ScheduleWithContext( std::stoi( packetInfo[1] ), Seconds( seconds ), &ConsumerQos::SendPacket, 
 			senders[std::stoi( packetInfo[1] )], packetInfo[0], packetInfo[2], agg, set );
+	seconds += step;
         packetNames.pop_back();
      }
   };
