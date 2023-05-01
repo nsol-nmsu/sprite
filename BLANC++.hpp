@@ -20,7 +20,7 @@
 #define BLANC
 
 #include <unordered_map>
-
+#include <unordered_set>
 
 #include "ns3/application.h"
 #include "ns3/event-id.h"
@@ -58,8 +58,40 @@ public:
   typedef void (* OnFindReplyTraceCallback) (uint32_t nodeid, uint32_t txID, double amount);
   typedef void (* OnHoldTraceCallback) (uint32_t nodeid, uint32_t txID, bool received);
   typedef void (* OnPayTraceCallback) (uint32_t nodeid, uint32_t txID);
-
+  typedef void (* OnPayPathTraceCallback) (uint32_t nodeid, uint32_t txID);
+  typedef void (* OnTxTraceCallback) (std::string nodeid, uint32_t txID, bool payer);
+  typedef void (* OnPathUpdateTraceCallback) (std::string nodeid1, std::string nodeid2, double amount);
+  typedef void (* OnTxFailTraceCallback) (uint32_t txID);
+  typedef void (* OnTxRetryTraceCallback) (uint32_t txID);
   
+   struct RoutingEntry {            // Structure declaration
+      std::string nextHop;
+      double sendMax;
+      double recvMax;
+      int hopCount;
+      double expireTime;
+      bool nonce;
+      RoutingEntry() :
+         nextHop(""),
+         sendMax(0),
+         recvMax(0),
+         hopCount(0),
+         expireTime(0),
+         nonce(false) {}
+   }; 
+
+   struct RHRoutingEntry {            // Structure declaration
+      std::string path;
+      double maxSend;
+      double maxRecv;
+      bool complete;
+      RHRoutingEntry() :
+         path(""),
+         maxSend(0),
+         maxRecv(0),
+         complete(false) {}
+   };   
+
    struct Neighbor {            // Structure declaration
       Ipv4Address address;
       Ptr<Socket> socket;
@@ -74,15 +106,31 @@ public:
       std::string nextHop;   // Member (string variable)
       std::string nextDest;
       double pending;
+      std::string payload;
+      double te1;
+      double te2;
       Ptr<Socket> src;
       std::string dest;
+      int retries;
+      bool onPath;
+      bool sender;
+      bool replied;
+      bool payReplied;
       TransactionInfo() :
          nextTxID(0),
          nextHop(""),
          nextDest(""),
          pending(0),
+         payload(""),
+         te1(0),
+         te2(0),
          src(NULL),
-         dest("") {}
+         dest(""),
+         retries(0),
+         onPath(false),
+         sender(false),
+         replied(false),
+         payReplied(false){}
    };    
 
   static TypeId GetTypeId (void);
@@ -124,89 +172,229 @@ public:
       FindReply = 2,
       Hold =      3,
       HoldRecv =  4,
-      Pay =       5
+      Pay =       5,
+      Advert =    6,
+      Reg =       7,
+      HoldReply = 8,
+      PayReply =  9, 
+      Nack =      11,
+      AdvertReply =    12
   };
 
   void processPacket(Ptr<Packet> p, Ptr<Socket> s);
 
-  void onHoldPacket(Ptr<Packet> p, blancHeader ph);
+  void onHoldPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
   void onHoldRecvPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
   void onFindPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
-  void onFindReply(Ptr<Packet> p, blancHeader ph);
+  void onHoldReply(Ptr<Packet> p, blancHeader ph);
 
-  void onPayPacket(Ptr<Packet> p, blancHeader ph);
+  void onPayPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
+  void onPayReply(Ptr<Packet> p, blancHeader ph);
+  
+  void onRegPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
+  
+  void onNack(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
+
+  void onAdvertPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
+
+  void 
+  onAdvertReply(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
   //Transaction Functions
   bool getTiP(){ return TiP; }; 
 
-  void startTransaction(uint32_t txID, uint32_t secret, std::vector<std::string> peerlist, bool payer);
+  void startTransaction(uint32_t txID, uint32_t secret, std::vector<std::string> peerlist, bool payer, double amount);
 
   void reset(uint32_t txID);
 
   uint32_t createTxID(uint32_t txID);
+  
+  void AdvertSetup(){};
+
+  void send(Ptr<Socket> s, Ptr<Packet> p);
+
 
   //Packet fowarding
-  void sendFindPacket(uint32_t txID, uint32_t secret);
+  void sendAdvertPacket();
 
-  void sendHoldPacket(uint32_t txID, double amount);
+  void 
+  sendAdvertReply(std::vector<std::string> items);
 
-  void sendPayPacket(uint32_t txID);
+  void 
+  sendRegPacket(std::string dest);
 
-  void sendFindReply(uint32_t txID, uint32_t secret, double amount);
+  void 
+  sendHoldPacket(uint32_t txID, double amount);
 
-  void forwardPacket(blancHeader packetHeader, std::string nextHop){
+  void 
+  sendHoldReply(uint32_t txID);
+
+  void 
+  sendProceedPay(uint32_t txID);
+
+  void 
+  sendPayPacket(uint32_t txID);
+
+  void 
+  sendPayReply(uint32_t txID);
+
+  void 
+  sendNack(uint32_t txID, double te1, std::string dest);
+
+  void 
+  forwardPacket(blancHeader packetHeader, std::string nextHop){
      forwardPacket(packetHeader,nextHop,"");
   };
 
-  void forwardPacket(blancHeader packetHeader, std::string nextHop, std::string payload);
+  void 
+  forwardPacket(blancHeader packetHeader, std::string nextHop, std::string payload);
 
-  void forwardPacket(blancHeader packetHeader, Ptr<Socket> socket, std::string payload);  
+  void 
+  forwardPacket(blancHeader packetHeader, Ptr<Socket> socket, std::string payload);  
 
   //Block Chain Functions
-  void updateBCFind(uint32_t txID){};
+  void 
+  updateBCFind(uint32_t txID){};
 
-  void updateBCHold(uint32_t txID){};
+  void 
+  updateBCHold(uint32_t txID){};
 
-  void updateBCHoldRecv(uint32_t txID){};
+  void 
+  updateBCHoldRecv(uint32_t txID){};
 
-  void updateBCPay(uint32_t txID){};  
+  void 
+  updateBCPay(uint32_t txID){};  
 
-  void updatePathWeight(std::string name, double amount){
+  void 
+  updatePathWeight(std::string name, double amount, bool sender){
       neighborTable[name].cost -= amount;
+      for (auto i = RoutingTable.begin(); i != RoutingTable.end(); i++){
+         for (auto each = i->second.begin(); each != i->second.end(); each++){
+            if (each->nextHop == name){
+               if (sender) each->sendMax -= amount;
+               else each->recvMax -= amount;
+            }
+         }
+      }
+      m_onPathUpdate(m_name, name, amount);
   };
   
-  //Routing Functions
-  void sendRoutingInfo();
+  void 
+  updateRoutingTable(std::string name, double amount, bool sender){
+      for (auto i = RoutingTable.begin(); i != RoutingTable.end(); i++){
+         for (auto each = i->second.begin(); each != i->second.end(); each++){
+            if (each->nextHop == name){
+               if (sender) each->sendMax = amount-1;
+               else each->recvMax = amount-1;
+            }
+         }
+      }
+  }
 
-  void setFindTable(std::string RH, std::string nextHop){
+ void 
+ updateRHRTableWeight(std::string name, double amount){
+      for (auto i = RHRoutingTable.begin(); i != RHRoutingTable.end(); i++){
+         for (auto each = i->second.begin(); each != i->second.end(); each++){
+            if (each->path == name){
+               each->maxSend -= amount;
+            }
+         }
+      }
+  };
+
+ void 
+ updateRHRTable(std::string name, double amount){
+      for (auto i = RHRoutingTable.begin(); i != RHRoutingTable.end(); i++){
+         for (auto each = i->second.begin(); each != i->second.end(); each++){
+            if (each->path == name){
+               each->maxSend = amount-1;
+            }
+         }
+      }
+  };
+
+  //Routing Functions
+  void 
+  sendRoutingInfo();
+
+  void 
+  setFindTable(std::string RH, std::string nextHop){
      findRHTable[RH] = nextHop;
   };
 
-  void setNeighborCredit(std::string name, double amount);
+  void 
+  setNeighborCredit(std::string name, double amount);
 
-  void setNeighbor(std::string name, Ipv4Address address);
+  void 
+  setNeighbor(std::string name, Ipv4Address address);
 
   //Utility Functions
-  bool hasHoldRecv(uint32_t txID);
+  bool 
+  hasHoldRecv(uint32_t txID);
 
-  void insertTimeout(uint32_t txID, std::string src, uint64_t timeout){};
+  void 
+  insertTimeout(uint32_t txID, std::string src, std::string payload, double te1, double te2, bool sender);
 
-  Ptr<Socket> getSocket(std::string dest);
+  void 
+  checkTimeout();
+  
+  void 
+  checkTe1(uint32_t txID, std::string src, std::string payload, double te1, bool sender);
 
-  std::vector<std::string> SplitString( std::string strLine, char delimiter ) {
+  void 
+  checkTe2(uint32_t txID, std::string src, bool sender);
+
+  Ptr<Socket>
+  getSocket(std::string dest);
+
+  uint32_t 
+  getHighestAmount(std::string dest);
+
+  std::string 
+  getRH();
+
+  std::vector<std::string> 
+  getReachableRHs();
+
+  std::vector<std::string>  
+  matchUpNonces(std::unordered_map<std::string, std::vector<std::string>> RHlist);
+
+  void 
+  setRHTable(std::unordered_map<std::string, std::vector<std::string>> RHlist);
+
+  std::string 
+  findNextHop(std::string dest, double amount, bool send);
+
+   //TODO:: Revist this function for optimization
+  std::string 
+  createPath(std::string dest, double amount);
+
+  std::string 
+  readPayload(Ptr<Packet> p);
+
+  std::string 
+  findSource(Ptr<Socket> s);
+
+  bool 
+  checkOverlap(uint32_t txID, std::string dest, bool sender);
+
+  std::vector<std::string> 
+  SplitString( std::string strLine, char delimiter, int max=0 ) {
    std::string str = strLine;
    std::vector<std::string> result;
    uint32_t i =0;
    std::string buildStr = "";
+   int total = 0;
 
    for ( i = 0; i<str.size(); i++) {
-      if ( str[i]== delimiter ) {
+      if ( str[i]== delimiter && (total != max || max == 0)) {
          result.push_back( buildStr );
-	 buildStr = "";
+	      buildStr = "";
+         total++;
       }
       else {
    	      buildStr += str[i];
@@ -238,16 +426,25 @@ private:
   uint32_t m_seq;
   double m_amount;
   bool m_payer;
+  int m_maxRetires = 4;//TODO:: add as varaible
 
 
   //BLANCpp Atributes
   bool m_route_helper;
+  bool method2 = false;
   std::string m_name;
   std::string nextRH;
   uint32_t m_txID = 0;
+  double lastSent = 0;
+
   std::unordered_map<std::string, std::string> findRHTable;
-  
+  std::unordered_map<std::string, std::vector<RoutingEntry>> RoutingTable;
+  std::unordered_map<std::string, std::vector<std::string>> NonceTable;
+  std::unordered_map<std::string, std::vector<RHRoutingEntry>> RHRoutingTable;
+
   std::unordered_map<uint32_t, TransactionInfo> txidTable; 
+  std::unordered_map<uint32_t, std::vector<TransactionInfo>> overlapTable; 
+  std::unordered_map<uint32_t, std::vector<Ptr<Socket>>> srcTrail; 
   std::unordered_map<std::string, Neighbor>  neighborTable; 
 
   //Transaction Pair atributes
@@ -260,7 +457,12 @@ private:
   TracedCallback<uint32_t, uint32_t, double> m_onFindReply;
   TracedCallback<uint32_t, uint32_t, bool> m_onHold;
   TracedCallback<uint32_t, uint32_t> m_onPay;
-  
+  TracedCallback<uint32_t, uint32_t> m_onPayPath;
+  TracedCallback<std::string, uint32_t, bool> m_onTx;
+  TracedCallback<std::string, std::string, double> m_onPathUpdate;
+  TracedCallback<uint32_t> m_onTxFail;
+  TracedCallback<uint32_t> m_onTxRetry;
+
 
 };
 
