@@ -26,14 +26,50 @@
 #include "ns3/object-factory.h"
 #include "ns3/ipv4-address.h"
 #include "ns3/BLANC++.hpp"
+#include "ns3/BLANC.hpp"
+#include "ns3/SpeedyM.hpp"
 
 namespace ns3 {
 /**
- * \ingroup iCenS Applications
+ * \ingroup Blanc Applications
  * \brief Create a server application which waits for input UDP packets
  *        and uses the information carried into their payload to compute
  *        delay and to determine if some packets are lost.
  */
+
+class BlancPPHelper
+{
+public:
+  /**
+   * Create BlancProducer which will make life easier for people trying
+   * to set up simulations with blanc application.
+   *
+   */
+  BlancPPHelper ();
+
+  /**
+   * Record an attribute to be set in each Application after it is is created.
+   *
+   * \param name the name of the attribute to set
+   * \param value the value of the attribute to set
+   */
+  void SetAttribute (std::string name, const AttributeValue &value);
+
+  /**
+   * Create one UDP server application on each of the Nodes in the
+   * NodeContainer.
+   *
+   * \param c The nodes on which to create the Applications.  The nodes
+   *          are specified by a NodeContainer.
+   * \returns The applications created, one Application per Node in the
+   *          NodeContainer.
+   */
+  ApplicationContainer Install (NodeContainer c);
+
+private:
+  ObjectFactory m_factory; //!< Object factory.
+  Ptr<BLANCpp> m_blanc; //!< The last created server application
+};
 
 class BlancHelper
 {
@@ -66,7 +102,41 @@ public:
 
 private:
   ObjectFactory m_factory; //!< Object factory.
-  Ptr<BLANCpp> m_blanc; //!< The last created server application
+  Ptr<Blanc> m_blanc; //!< The last created server application
+};
+
+class SpeedyHelper
+{
+public:
+  /**
+   * Create BlancProducer which will make life easier for people trying
+   * to set up simulations with blanc application.
+   *
+   */
+  SpeedyHelper ();
+
+  /**
+   * Record an attribute to be set in each Application after it is is created.
+   *
+   * \param name the name of the attribute to set
+   * \param value the value of the attribute to set
+   */
+  void SetAttribute (std::string name, const AttributeValue &value);
+
+  /**
+   * Create one UDP server application on each of the Nodes in the
+   * NodeContainer.
+   *
+   * \param c The nodes on which to create the Applications.  The nodes
+   *          are specified by a NodeContainer.
+   * \returns The applications created, one Application per Node in the
+   *          NodeContainer.
+   */
+  ApplicationContainer Install (NodeContainer c);
+
+private:
+  ObjectFactory m_factory; //!< Object factory.
+  Ptr<SpeedyM> m_speedy; //!< The last created server application
 };
 
 } // namespace ns3

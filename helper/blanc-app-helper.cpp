@@ -24,9 +24,36 @@
 
 namespace ns3 {
 
-BlancHelper::BlancHelper ()
+BlancPPHelper::BlancPPHelper ()
 {
   m_factory.SetTypeId ("ns3::BLANCpp");
+}
+
+void
+BlancPPHelper::SetAttribute (std::string name, const AttributeValue &value)
+{
+  m_factory.Set (name, value);
+}
+
+ApplicationContainer
+BlancPPHelper::Install (NodeContainer c)
+{
+  ApplicationContainer apps;
+  for (NodeContainer::Iterator i = c.Begin (); i != c.End (); ++i)
+    {
+      Ptr<Node> node = *i;
+
+      m_blanc = m_factory.Create<BLANCpp> ();
+      node->AddApplication (m_blanc);
+      apps.Add (m_blanc);
+
+    }
+  return apps;
+}
+
+BlancHelper::BlancHelper ()
+{
+  m_factory.SetTypeId ("ns3::BLANC");
 }
 
 void
@@ -43,12 +70,40 @@ BlancHelper::Install (NodeContainer c)
     {
       Ptr<Node> node = *i;
 
-      m_blanc = m_factory.Create<BLANCpp> ();
+      m_blanc = m_factory.Create<Blanc> ();
       node->AddApplication (m_blanc);
       apps.Add (m_blanc);
 
     }
   return apps;
 }
+
+SpeedyHelper::SpeedyHelper ()
+{
+  m_factory.SetTypeId ("ns3::SpeedyM");
+}
+
+void
+SpeedyHelper::SetAttribute (std::string name, const AttributeValue &value)
+{
+  m_factory.Set (name, value);
+}
+
+ApplicationContainer
+SpeedyHelper::Install (NodeContainer c)
+{
+  ApplicationContainer apps;
+  for (NodeContainer::Iterator i = c.Begin (); i != c.End (); ++i)
+    {
+      Ptr<Node> node = *i;
+
+      m_speedy = m_factory.Create<SpeedyM> ();
+      node->AddApplication (m_speedy);
+      apps.Add (m_speedy);
+
+    }
+  return apps;
+}
+
 
 } // namespace ns3

@@ -21,6 +21,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <random>
 
 #include "ns3/application.h"
 #include "ns3/event-id.h"
@@ -59,13 +60,16 @@ public:
   typedef void (* OnHoldTraceCallback) (uint32_t nodeid, uint32_t txID, bool received);
   typedef void (* OnPayTraceCallback) (uint32_t nodeid, uint32_t txID);
   typedef void (* OnPayPathTraceCallback) (uint32_t nodeid, uint32_t txID);
-  typedef void (* OnTxTraceCallback) (std::string nodeid, uint32_t txID, bool payer);
+  typedef void (* OnTxTraceCallback) (std::string nodeid, uint32_t txID, bool payer, double amount);
   typedef void (* OnPathUpdateTraceCallback) (std::string nodeid1, std::string nodeid2, double amount);
   typedef void (* OnTxFailTraceCallback) (uint32_t txID);
   typedef void (* OnTxRetryTraceCallback) (uint32_t txID);
+  typedef void (* OnAdTraceCallback) (std::string nodeid);
+
   
    struct RoutingEntry {            // Structure declaration
       std::string nextHop;
+      std::string route;
       double sendMax;
       double recvMax;
       int hopCount;
@@ -95,10 +99,12 @@ public:
    struct Neighbor {            // Structure declaration
       Ipv4Address address;
       Ptr<Socket> socket;
-      double cost;
+      double costTo;
+      double costFrom;
       Neighbor() :
          socket(NULL),
-         cost(0) {}
+         costTo(0), 
+         costFrom(0) {}
    }; 
 
    struct TransactionInfo {             // Structure declaration
@@ -116,6 +122,8 @@ public:
       bool sender;
       bool replied;
       bool payReplied;
+      bool paySend;
+      bool RH1;
       TransactionInfo() :
          nextTxID(0),
          nextHop(""),
@@ -130,40 +138,14 @@ public:
          onPath(false),
          sender(false),
          replied(false),
-         payReplied(false){}
+         paySend(false),
+         payReplied(false),
+         RH1(false){}
    };    
 
   static TypeId GetTypeId (void);
   BLANCpp ();
   virtual ~BLANCpp ();
-
-  /**
-   *
-   * Receive the packet from client echo on socket level (layer 4), 
-   * handle the packet and return to the client.
-   *
-   * \param socket TCP socket.
-   *
-   */
-  void ReceivePacket(Ptr<Socket> socket);
-  
-  /**
-  *
-  * Handle packet from accept connections.
-  *
-  * \parm s TCP socket.
-  * \parm from Address from client echo.
-  */
-  void HandleAccept (Ptr<Socket> s, const Address& from);
-  
-  /**
-  *
-  * Handle successful closing connections.
-  *
-  * \parm s TCP socket.
-  *
-  */
-  void HandleSuccessClose(Ptr<Socket> s);
   
   //Incoming Packet handling 
   enum PacketType { 
@@ -181,7 +163,7 @@ public:
       AdvertReply =    12
   };
 
-  void processPacket(Ptr<Packet> p, Ptr<Socket> s);
+  void processPacket(Ptr<Packet> p, Ptr<Socket> s) overide;
 
   void onHoldPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
@@ -194,9 +176,7 @@ public:
   void onPayPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
   void onPayReply(Ptr<Packet> p, blancHeader ph);
-  
-  void onRegPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
-  
+    
   void onNack(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
   void onAdvertPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
@@ -207,7 +187,7 @@ public:
   //Transaction Functions
   bool getTiP(){ return TiP; }; 
 
-  void startTransaction(uint32_t txID, uint32_t secret, std::vector<std::string> peerlist, bool payer, double amount);
+  void startTransaction(uint32_t txID, std::vector<std::string> peerlist, bool payer, double amount);
 
   void reset(uint32_t txID);
 
@@ -215,8 +195,30 @@ public:
   
   void AdvertSetup(){};
 
-  void send(Ptr<Socket> s, Ptr<Packet> p);
+  double KeyGen(){
+   return keyGen(generator)/1000.0;
+  };
 
+  double Sign(){
+   return sign(generator)/1000.0;
+  };
+
+  double Verify(){
+   return verify(generator)/1000.0;
+  };
+
+
+  double KeyGenB(){
+   return keyGenB(generator)/1000.0;
+  };
+
+  double SignB(){
+   return signB(generator)/1000.0;
+  };
+
+  double VerifyB(){
+   return verifyB(generator)/1000.0;
+  };
 
   //Packet fowarding
   void sendAdvertPacket();
@@ -231,10 +233,10 @@ public:
   sendHoldPacket(uint32_t txID, double amount);
 
   void 
-  sendHoldReply(uint32_t txID);
+  sendHoldReply(uint32_t txID, double delay);
 
   void 
-  sendProceedPay(uint32_t txID);
+  sendProceedPay(uint32_t txID, double delay);
 
   void 
   sendPayPacket(uint32_t txID);
@@ -243,18 +245,11 @@ public:
   sendPayReply(uint32_t txID);
 
   void 
-  sendNack(uint32_t txID, double te1, std::string dest);
+  sendNack(TransactionInfo* entry, uint32_t txID, double te1, std::string dest, double delay, bool RHreject);
+
 
   void 
-  forwardPacket(blancHeader packetHeader, std::string nextHop){
-     forwardPacket(packetHeader,nextHop,"");
-  };
-
-  void 
-  forwardPacket(blancHeader packetHeader, std::string nextHop, std::string payload);
-
-  void 
-  forwardPacket(blancHeader packetHeader, Ptr<Socket> socket, std::string payload);  
+  sendPreNack(std::string src, uint32_t txID, double te1, std::string dest, double delay, bool RHreject);
 
   //Block Chain Functions
   void 
@@ -271,12 +266,19 @@ public:
 
   void 
   updatePathWeight(std::string name, double amount, bool sender){
-      neighborTable[name].cost -= amount;
+      neighborTable[name].costTo -= amount;
+      neighborTable[name].costFrom += amount;
       for (auto i = RoutingTable.begin(); i != RoutingTable.end(); i++){
          for (auto each = i->second.begin(); each != i->second.end(); each++){
             if (each->nextHop == name){
-               if (sender) each->sendMax -= amount;
-               else each->recvMax -= amount;
+               if (sender) {
+                  each->sendMax -= amount;
+                  each->recvMax += amount;
+               }
+               else {
+                  each->sendMax += amount;
+                  each->recvMax -= amount;
+               }
             }
          }
       }
@@ -327,7 +329,7 @@ public:
   };
 
   void 
-  setNeighborCredit(std::string name, double amount);
+  setNeighborCredit(std::string name, double amountTo, double amountFrom);
 
   void 
   setNeighbor(std::string name, Ipv4Address address);
@@ -355,7 +357,7 @@ public:
   getHighestAmount(std::string dest);
 
   std::string 
-  getRH();
+  getRH(std::string RH1 = "");
 
   std::vector<std::string> 
   getReachableRHs();
@@ -367,11 +369,11 @@ public:
   setRHTable(std::unordered_map<std::string, std::vector<std::string>> RHlist);
 
   std::string 
-  findNextHop(std::string dest, double amount, bool send);
+  findNextHop(std::string dest, double amount, bool send, std::string routeList);
 
    //TODO:: Revist this function for optimization
   std::string 
-  createPath(std::string dest, double amount);
+  createPath(std::string dest, double amount, std::vector<std::string> attempt_list, bool RH1);
 
   std::string 
   readPayload(Ptr<Packet> p);
@@ -406,16 +408,11 @@ public:
 
    return result;
 };
+virtual void StartApplication (void);
 
-protected:
-  virtual void DoDispose (void);
 
 private:
 
-  virtual void StartApplication (void);
-  virtual void StopApplication (void);
-
-  void HandleRead (Ptr<Socket> socket);
 
   uint16_t m_local_port;
   bool m_running;
@@ -434,8 +431,9 @@ private:
   bool method2 = false;
   std::string m_name;
   std::string nextRH;
-  uint32_t m_txID = 0;
+  uint32_t m_txID = 1000000;
   double lastSent = 0;
+  int m_hopMax;
 
   std::unordered_map<std::string, std::string> findRHTable;
   std::unordered_map<std::string, std::vector<RoutingEntry>> RoutingTable;
@@ -443,13 +441,19 @@ private:
   std::unordered_map<std::string, std::vector<RHRoutingEntry>> RHRoutingTable;
 
   std::unordered_map<uint32_t, TransactionInfo> txidTable; 
+  std::unordered_map<uint32_t, std::string> txidAttempts; 
+  std::unordered_map<uint32_t, bool> messageHist; 
+
+  std::unordered_map<std::string, bool> failedTxs; 
+  std::unordered_map<uint32_t, std::vector<std::string>> attempted_paths;
   std::unordered_map<uint32_t, std::vector<TransactionInfo>> overlapTable; 
   std::unordered_map<uint32_t, std::vector<Ptr<Socket>>> srcTrail; 
   std::unordered_map<std::string, Neighbor>  neighborTable; 
+  std::unordered_map<std::string, double>  sendOverlapTable; 
 
   //Transaction Pair atributes
   bool TiP = false;
-
+  bool debug = false;
 
   //Callbacks
   TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t, uint32_t, Ipv4Address> m_receivedPacket;
@@ -458,10 +462,20 @@ private:
   TracedCallback<uint32_t, uint32_t, bool> m_onHold;
   TracedCallback<uint32_t, uint32_t> m_onPay;
   TracedCallback<uint32_t, uint32_t> m_onPayPath;
-  TracedCallback<std::string, uint32_t, bool> m_onTx;
+  TracedCallback<std::string> m_onAd;
+  TracedCallback<std::string, uint32_t, bool, double> m_onTx;
   TracedCallback<std::string, std::string, double> m_onPathUpdate;
   TracedCallback<uint32_t> m_onTxFail;
   TracedCallback<uint32_t> m_onTxRetry;
+
+  std::default_random_engine generator;
+  std::normal_distribution<double> keyGen = std::normal_distribution<double>(4.046,1.461831891);
+  std::normal_distribution<double> sign = std::normal_distribution<double>(2.056333333,0.248690915);
+  std::normal_distribution<double> verify = std::normal_distribution<double>(2.164,0.823274245);
+
+  std::normal_distribution<double> keyGenB = std::normal_distribution<double>(0.75632584, 0.07916256202522998);
+  std::normal_distribution<double> signB = std::normal_distribution<double>(6.076999,0.46608233545117994);
+  std::normal_distribution<double> verifyB = std::normal_distribution<double>(4.57887295,0.36723454547643025);  
 
 
 };

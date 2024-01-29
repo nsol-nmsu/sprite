@@ -49,8 +49,6 @@ public:
   /** \brief Add a string to list of packets that arrived at their distination.
    *  \param Str string with information on the arriving packet.
    */
-  void
-  onFindReplyPacket( uint32_t node, uint32_t txID, double amount);
 
   void
   onHoldPacket( uint32_t node, uint32_t txID, bool received);
@@ -92,13 +90,49 @@ public:
      nodes[node]->setFindTable(RH, nextHop);
   };
 
-  void setNeighborCredit(uint32_t node, std::string name, double amount){
-     nodes[node]->setNeighborCredit(name, amount);
+  void setStart(uint32_t start){
+     m_txID = start;
+  };  
+
+  void setNeighborCredit(uint32_t node, std::string name, double amountTo, double amountFrom){
+     nodes[node]->setNeighborCredit(name, amountTo, amountFrom);
   };
 
   void setAddressTable(int node, std::string name, Ipv4Address address){
       nodes[node]->setNeighbor(name, address);
   };
+
+  void setTxTable(std::unordered_map<int, std::string> map){
+   hasMap = true;
+   txMap = map;
+  };  
+
+
+  std::vector<std::string> 
+  SplitString( std::string strLine, char delimiter, int max=0 ) {
+   std::string str = strLine;
+   std::vector<std::string> result;
+   uint32_t i =0;
+   std::string buildStr = "";
+   int total = 0;
+
+   for ( i = 0; i<str.size(); i++) {
+      if ( str[i]== delimiter && (total != max || max == 0)) {
+         result.push_back( buildStr );
+	      buildStr = "";
+         total++;
+      }
+      else {
+   	      buildStr += str[i];
+      }
+   }
+
+   if(buildStr!="")
+      result.push_back( buildStr );
+
+   return result;
+};
+
 
 private:
 
@@ -106,6 +140,8 @@ private:
   std::unordered_map<int,Ptr<BLANCpp>> nodes;
   std::unordered_map<int,Ptr<BLANCpp>> senders;
   std::unordered_map<int,Ptr<BLANCpp>> routingHelpers;
+  std::unordered_map<int,std::string> txMap;
+  bool hasMap;
 
   std::unordered_map<uint32_t, std::vector <uint32_t>> txIDmap;
   std::unordered_map<uint32_t, uint32_t> T_SMap;
@@ -114,7 +150,8 @@ private:
   std::unordered_map<uint32_t, bool> HoldMap;
 
   bool m_tablesMade = false;
-
+  int limit = 10000;
+  uint32_t m_txID= 0;
 };
 
 }

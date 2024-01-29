@@ -98,6 +98,14 @@ public:
    */
   double  GetAmount (void);
 
+  void setPayloadSize(uint32_t s){
+    m_payloadSize = s;
+  };
+
+  uint32_t  GetPayloadSize (void){
+    return m_payloadSize;
+  }; 
+
 
   // Overridden methods from NS3 Header Class
   virtual uint32_t GetSerializedSize (void) const;
@@ -107,6 +115,7 @@ public:
 
 private:
   uint32_t m_packetType;
+  uint32_t m_payloadSize;
   uint32_t m_dest;//REPLACE WITH STRING
   uint32_t m_nxtDest;
   uint32_t m_TID_prime;

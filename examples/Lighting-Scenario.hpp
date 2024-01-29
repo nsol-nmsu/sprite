@@ -58,9 +58,12 @@ std::vector<int> srcedge, dstedge;
 std::vector<std::string> com_ips;
 std::vector<std::pair<int,std::string>> phy_to_agg_map;
 std::string GetIP(int nodeid);
+std::string GetLinkIP(int node1, int node2);
+
 bool HasIP(int nodeid);
 // Nodes and their corresponding IPs, used to output namespaces in tracefile
 std::vector<std::pair<int,std::string>> node_ip_map;
+std::vector<std::pair<std::string,std::string>> link_ip_map;
 std::vector<std::pair<int,std::string>> wac_ip_map;
 std::vector<std::pair<int,std::string>> pdc_ip_map;
 std::vector<std::pair<int,std::string>> pmu_ip_map;
@@ -109,7 +112,7 @@ int main (int argc, char *argv[])
 
   // Open the configuration file for reading
   //std::ifstream configFile ("../topology/interface/blancPP-TestCase2.txt", std::ios::in);
-  std::ifstream configFile ("BlancTopo.txt", std::ios::in);
+  std::ifstream configFile ("LNTopo.txt", std::ios::in);
 
   std::string strLine;
   bool gettingNodeCount = false, buildingNetworkTopo = false, nonRH = false, RH = false, clients = false, costTable = false; 
@@ -141,16 +144,19 @@ int main (int argc, char *argv[])
 
 
   //Open trace file for writing
-  tracefile.open("BlancPP-trace.csv", std::ios::out);
+  tracefile.open("LN-trace.csv", std::ios::out);
   tracefile << "event,txID,time" << std::endl;
 
-  tracefile1.open("BlancPP-path.csv", std::ios::out);
+  tracefile1.open("LN-path.csv", std::ios::out);
   tracefile1 << "event,amount,time,node1,node2" << std::endl;  
 
   std::vector<int> lastIP = {10, 0, 0, 4};
   unordered_map<int,int> RHs;
+  unordered_map<int,int> Cls;
+  unordered_map<std::string,int> has_IP;
   unordered_map<int,std::vector<double>> costMap;
   unordered_map<int,std::vector<int>> neighborMap;  
+  int links = 0;
   int startClient = 10000000000;
   if (configFile.is_open ()) {
      while (std::getline(configFile, strLine)) {
@@ -187,21 +193,39 @@ int main (int argc, char *argv[])
         }
         else if(buildingNetworkTopo == true) {
            //Building network topology
-           netParams = SplitString(strLine);
-           int mbps = std::stoi(netParams[2])/10;
+           netParams = SplitString(strLine);       
+           int mbps = std::stoi(netParams[2])*10;
            p2p.SetDeviceAttribute( "DataRate", StringValue( std::to_string(mbps)+"Mbps" ) );			
-           p2p.SetChannelAttribute("Delay", StringValue("5ms"));
+           double delay = double(rand()%6+4);
+
+           p2p.SetChannelAttribute("Delay", StringValue(std::to_string(delay)+ "ms"));
            devices = p2p.Install(nodes.Get(std::stoi(netParams[0])), nodes.Get(std::stoi(netParams[1])));
            std::string IP = std::to_string(lastIP[0])+"."+std::to_string(lastIP[1])+"."+std::to_string(lastIP[2])+"."+std::to_string(lastIP[3]);
 
            addresses.SetBase (Ipv4Address (IP.c_str()), Ipv4Mask("255.255.255.252"));
            addresses.Assign (devices);
+           links++;
+
+        /*
+           Ipv4StaticRoutingHelper ipv4RoutingHelper;
+           Ptr<Ipv4> ipv41 = nodes.Get(std::stoi(netParams[0]))->GetObject<Ipv4> ();     
+           Ptr<Ipv4> ipv42 = nodes.Get(std::stoi(netParams[1]))->GetObject<Ipv4> ();     
+
+           std::string IP1 = std::to_string(lastIP[0])+"."+std::to_string(lastIP[1])+"."+std::to_string(lastIP[2])+"."+std::to_string(lastIP[3]);
+           std::string IP2 = std::to_string(lastIP[0])+"."+std::to_string(lastIP[1])+"."+std::to_string(lastIP[2])+"."+std::to_string(lastIP[3] +3);
+
+           Ptr<Ipv4StaticRouting> staticRouting1 = ipv4RoutingHelper.GetStaticRouting (ipv41);
+           staticRouting1->AddHostRouteTo (Ipv4Address (IP2.c_str()), Ipv4Address ("10.1.1.6"),2);*/
 
            lastIP[3]+=4;
            if(lastIP[3]>=256){
                 lastIP[3] = 4;
                 lastIP[2]+=1;
            }
+           if(lastIP[2]>=256){
+                lastIP[2] = 4;
+                lastIP[1]+=1;
+           }           
            node_ip_pair.first = std::stoi(netParams[0]);
            node_ip_pair.second = GetIPFromSubnet(netParams[0], IP, 1);
            node_ip_map.push_back(node_ip_pair);
@@ -210,6 +234,12 @@ int main (int argc, char *argv[])
            node_ip_pair.first = std::stoi(netParams[1]);
            node_ip_pair.second = GetIPFromSubnet(netParams[1], IP, 2);
            node_ip_map.push_back(node_ip_pair);
+
+           std::pair<std::string,std::string> link_ip_pair;
+           link_ip_pair.first = netParams[0]+" "+netParams[1];
+           link_ip_pair.second = IP;
+
+           link_ip_map.push_back(link_ip_pair );
         }
         else if(false && nonRH == true) {
            //Install apps on PDCs and PMUs for data exchange
@@ -263,16 +293,15 @@ int main (int argc, char *argv[])
         }
         else if(clients == true) {
            netParams = SplitString(strLine);
-           startClient = std::stoi(netParams[0]);
-           for (int i = startClient; i < nodes.size()-1; i++){
-             sync.addSender( i );
-           }
+           sync.addSender( std::stoi(netParams[0]));
+           Cls[std::stoi(netParams[0])] = 1;
         }
         else if(costTable == true) {
            netParams = SplitString(strLine);
            double linkweight = double(rand()%400+250);
-           if (std::stoi(netParams[0]) >= startClient || std::stoi(netParams[1]) >= startClient)
-                linkweight = 1000;
+           if (rand()%1000 > 10) linkweight = linkweight*100;
+           if (Cls[ std::stoi(netParams[0]) ] || Cls[ std::stoi(netParams[1]) ])
+                linkweight = 100000;
            onPathUpdate(netParams[0], netParams[1], linkweight);
            onPathUpdate(netParams[1], netParams[0], linkweight);                   
            costMap[std::stoi(netParams[0])].push_back(linkweight);
@@ -290,6 +319,8 @@ int main (int argc, char *argv[])
 
   configFile.close();
 
+  std::cout<<"Links: "<<links<<"\n";
+  std::cout<<"Creating apps...\n";
   for ( int i=0; i<( int )nodes.size()-1; i++ ) {
      if (RHs[i] == 0){
         netParams = SplitString(strLine);
@@ -319,27 +350,33 @@ int main (int argc, char *argv[])
      }
   }
 
+  std::cout<<"Setting addresses...\n";
   for (auto it = neighborMap.begin(); it != neighborMap.end(); it++) {
      for (int i = 0; i < it->second.size(); i++){
         //std::cout<<"Check this out..." <<it->first<<" "<<it->second[i]<<std::endl;
-        sync.setAddressTable(it->first, std::to_string(it->second[i]), Ipv4Address(GetIP(it->second[i]).c_str()) );
-        sync.setAddressTable(it->second[i], std::to_string(it->first), Ipv4Address(GetIP(it->first).c_str()) );
+        std::string baseIP =  GetLinkIP(it->first, it->second[i]);
+        std::string IP1 = GetIPFromSubnet(std::to_string(it->first), baseIP, 2);
+        std::string IP2 = GetIPFromSubnet(std::to_string(it->second[i]), baseIP, 1);
+
+        sync.setAddressTable(it->first, std::to_string(it->second[i]), Ipv4Address(IP1.c_str()) );
+        sync.setAddressTable(it->second[i], std::to_string(it->first), Ipv4Address(IP2.c_str()) );
 
         sync.setNeighborCredit(it->first, std::to_string(it->second[i]), costMap[it->first][i] );
         sync.setNeighborCredit(it->second[i], std::to_string(it->first), costMap[it->first][i] );
      }
   }
 
+  std::cout<<"Creating Routing table...\n";
   //Populate the routing table
-  Ipv4GlobalRoutingHelper::PopulateRoutingTables();
-
+  //Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+  std::cout<<"Finshed\n";
   std::string strcallback;
 
-  sync.beginSync(1.0);
+  sync.beginSync(50.0);
 
   //Run actual simulation
   //Simulator::Stop (Seconds(1.0));
-  Simulator::Stop (Seconds(100.0));
+  Simulator::Stop (Seconds(60.0));
   Simulator::Run ();
   Simulator::Destroy ();
 
@@ -520,6 +557,18 @@ std::string GetIP(int nodeid) {
         std::cout << "Node " << nodeid << ", has no corresponding IP!!!!!" << std::endl;
 
         exit(1);
+}
+
+std::string GetLinkIP(int node1, int node2){
+    for (int i=0; i<(int)link_ip_map.size(); i++) {
+        std::vector<std::string> nodes = SplitString(link_ip_map[i].first);
+        if ((node1 == std::stoi(nodes[0]) || node1 == std::stoi(nodes[1]) ) &&
+            (node2 == std::stoi(nodes[0]) || node2 == std::stoi(nodes[1]) ) ) {
+                return link_ip_map[i].second;
+        }
+    }
+    std::cout << "Node " << node1 << ", has no corresponding IP!!!!!" << std::endl;
+    exit(1);        
 }
 
 bool HasIP(int nodeid) {

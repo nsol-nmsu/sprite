@@ -120,12 +120,13 @@ uint32_t
 blancHeader::GetSerializedSize (void) const
 {
   //Four bytes of data to store
-  return 28;
+  return 32;
 }
 void
 blancHeader::Serialize (Buffer::Iterator start) const
 {
   start.WriteHtonU32 (m_packetType);
+  start.WriteHtonU32 (m_payloadSize);
   start.WriteHtonU32 (m_dest);
   start.WriteHtonU32 (m_nxtDest);
   start.WriteHtonU32 (m_TID_prime);
@@ -136,12 +137,13 @@ uint32_t
 blancHeader::Deserialize (Buffer::Iterator start)
 {
   m_packetType = start.ReadNtohU32 ();
+  m_payloadSize = start.ReadNtohU32 ();
   m_dest = start.ReadNtohU32 ();
   m_nxtDest = start.ReadNtohU32 ();
   m_TID_prime = start.ReadNtohU32 ();
   m_TID = start.ReadNtohU32 ();
   m_amount = start.ReadNtohU64 ();
-  return 28;
+  return 32;
 }
 void
 blancHeader::Print (std::ostream &os) const
