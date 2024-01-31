@@ -16,8 +16,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef ICENS_HEADER_H
-#define ICENS_HEADER_H
+#ifndef BLANC_HEADER_H
+#define BLANC_HEADER_H
 
 #include "ns3/header.h"
 #include <stdint.h>

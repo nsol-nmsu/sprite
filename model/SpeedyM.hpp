@@ -31,6 +31,7 @@
 #include "ns3/blanc-header.h"
 #include "ns3/socket.h"
 #include "ns3/packet.h"
+#include "ns3/PCN-App-Base.hpp" 
 
 namespace ns3 {
 
@@ -48,14 +49,10 @@ class Packet;
  *
  * Every packet received is sent back to the client.
  */
-class SpeedyM : public Application
+class SpeedyM : public PCN_App_Base
 {
 public:
-
-  typedef void (* ReceivedPacketTraceCallback) (uint32_t nodeid, Ptr<Packet> packet, const Address &address, 
-		  uint32_t localport, uint32_t packetSize, uint32_t subscription, Ipv4Address localip);
   typedef void (* SentPacketTraceCallback) (uint32_t nodeid, Ptr<Packet> packet, const Address &address, uint32_t localport);
-
   typedef void (* OnFindReplyTraceCallback) (uint32_t nodeid, uint32_t txID, double amount);
   typedef void (* OnHoldTraceCallback) (uint32_t nodeid, uint32_t txID, bool received);
   typedef void (* OnPayTraceCallback) (uint32_t nodeid, uint32_t txID);
@@ -104,7 +101,7 @@ public:
       parentUpdate = 12
   };
 
-  void processPacket(Ptr<Packet> p, Ptr<Socket> s);
+  void processPacket(Ptr<Packet> p, Ptr<Socket> s) override;
 
   void onRoutePayPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
@@ -119,7 +116,7 @@ public:
   //Transaction Functions
   void startTransaction(uint32_t txID, std::vector<std::string> addresslist, double amount);
 
-  void reset(uint32_t txID) overide;
+  virtual void reset(uint32_t txID) override;
   
   double KeyGen(){
    return keyGen(generator)/1000.0;
@@ -157,12 +154,26 @@ public:
   sendNack(std::string txID, double delay);
 
   //Utility Functions
+  void 
+  updatePathWeight(std::string name, double amount, bool sender){
+      neighborTable[name].cost -= amount;
+      m_onPathUpdate(getName(), name, amount);
+  };
 
   void 
-  insertTimeout(uint32_t txID, std::string src, std::string payload, double te1, bool sender){} overide;
+  insertTimeout(uint32_t txID, std::string src, std::string payload, double te1, bool sender) {
+   
+  };
 
   void 
   checkTimeout();
+
+   void 
+   checkFail(uint32_t txID)
+   {
+      if (getTiP() && getTxID() == txID)
+         m_onTxFail(txID);
+   }
 
   std::vector<std::string>
   getAddressList(){
@@ -202,12 +213,7 @@ virtual void StartApplication (void);
 
 private:
 
-  uint16_t m_local_port;
   bool m_running;
-  Ipv4Address m_local_ip;
-  Ptr<Socket> m_socket;
-  uint32_t m_packet_size;
-  uint16_t m_peerPort = 5017;
   uint32_t m_seq;
   double m_amount;
   bool m_payer;
@@ -217,10 +223,7 @@ private:
   //SpeedyM Atributes
   bool m_route_helper;
   bool method2 = false;
-  std::string m_name;
   std::string nextRH;
-  uint32_t m_txID = 10000000000000000000;
-  double lastSent = 0;
   int m_successful_routes;
   int m_treeCount;
   bool m_failed = false;
@@ -228,15 +231,9 @@ private:
   std::unordered_map<std::string, TreeEntry> TreeTable;
 
   std::unordered_map<std::string, TransactionInfo> txidTable; 
-  std::unordered_map<std::string, Neighbor>  neighborTable; 
   std::unordered_map<std::string, double>  sendOverlapTable; 
 
-  //Transaction Pair atributes
-  bool TiP = false;
-
-
   //Callbacks
-  TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t, uint32_t, Ipv4Address> m_receivedPacket;
   TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t> m_sentPacket;
   TracedCallback<uint32_t, uint32_t, double> m_onFindReply;
   TracedCallback<uint32_t, uint32_t, bool> m_onHold;

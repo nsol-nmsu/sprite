@@ -45,7 +45,6 @@
 using namespace std;
 
 namespace ns3 {
-namespace ndn {
 
 // On object construction create sockets and set references
 BLANCSync::BLANCSync() {
@@ -54,7 +53,7 @@ BLANCSync::BLANCSync() {
 
 void
 BLANCSync::syncEvent(){
-   Synchronizer::syncEvent();
+   Synch::syncEvent();
    injectPackets( );
 }
 
@@ -92,9 +91,6 @@ if(hasMap){
       rh2 = it2->second->getName();
 
    if(nodes[sender]->getTiP() || nodes[reciver]->getTiP()){
-      //std::cout<<sender<<" "<<reciver<<" "<<txID<<std::endl;
-      //if(nodes[sender]->getTiP())std::cout<<"Sender\n";
-      //if(nodes[reciver]->getTiP())std::cout<<"Reciver\n";
       limit++;
       m_txID--;
       return;
@@ -203,7 +199,6 @@ BLANCSync::onFindReplyPacket( uint32_t node, uint32_t txID, double amount){
    }
    if (txIDmap[txID][0] == node)
       FRMap[txID][0] = true;
-   //else if (txIDmap[txID][1] == node)
    else if (txIDmap[txID][1] == node)
       FRMap[txID][1] = true;
 
@@ -246,10 +241,6 @@ BLANCSync::onPayPacket( uint32_t node, uint32_t txID){
 
      nodes[node1]->reset(txID);
      nodes[node2]->reset(txID);
-
-     //std::cout<<"All finished\n\n\n";
   } 
-}
-
 }
 }

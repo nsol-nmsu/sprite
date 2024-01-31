@@ -45,7 +45,6 @@ using namespace std;
 
 
 namespace ns3 {
-namespace ndn {
 
 // On object construction create sockets and set references
 SpeedySync::SpeedySync() {
@@ -54,7 +53,7 @@ SpeedySync::SpeedySync() {
 
 void
 SpeedySync::syncEvent(){
-   Synchronizer::syncEvent();
+   Synch::syncEvent();
    injectPackets( );
 }
 
@@ -69,9 +68,7 @@ if(hasMap){
    std::vector<std::string> txInfo = SplitString(txMap[m_txID],'|');
    sender = std::stoi(txInfo[0]);
    reciver = std::stoi(txInfo[1]);
-   amount = std::stod(txInfo[2]);
-   //if(m_txID % 10 == 0) 
-   //   amount = amount *10;   
+   amount = std::stod(txInfo[2]); 
    if(nodes[sender]->getTiP() || nodes[reciver]->getTiP()){
       return;
    }
@@ -101,7 +98,6 @@ else{
       
    }
    if (pair.size() != 2) {
-      //std::cout<<"No pairs\n";
       return;
    }
    sender = pair[0];
@@ -155,5 +151,4 @@ SpeedySync::onTxFail(uint32_t txID){
 
    nodes[node1]->reset(txID);
    nodes[node2]->reset(txID);}
-}
 }

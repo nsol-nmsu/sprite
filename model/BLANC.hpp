@@ -13,6 +13,7 @@
 #include "ns3/blanc-header.h"
 #include "ns3/socket.h"
 #include "ns3/packet.h"
+#include "ns3/PCN-App-Base.hpp" 
 
 namespace ns3 {
 
@@ -30,21 +31,17 @@ class Packet;
  *
  * Every packet received is sent back to the client.
  */
-class Blanc : public Application
+class Blanc : public PCN_App_Base
 {
 public:
-
-  typedef void (* ReceivedPacketTraceCallback) (uint32_t nodeid, Ptr<Packet> packet, const Address &address, 
-		  uint32_t localport, uint32_t packetSize, uint32_t subscription, Ipv4Address localip);
   typedef void (* SentPacketTraceCallback) (uint32_t nodeid, Ptr<Packet> packet, const Address &address, uint32_t localport);
-
   typedef void (* OnFindReplyTraceCallback) (uint32_t nodeid, uint32_t txID, double amount);
   typedef void (* OnHoldTraceCallback) (uint32_t nodeid, uint32_t txID, bool received);
   typedef void (* OnPayTraceCallback) (uint32_t nodeid, uint32_t txID);
   typedef void (* OnPayPathTraceCallback) (uint32_t nodeid, uint32_t txID);
   typedef void (* OnTxTraceCallback) (std::string nodeid, uint32_t txID, bool payer, double amount);
-  typedef void (* OnFindTraceCallback) (std::string nodeid, uint32_t txID, bool payer);
   typedef void (* OnPathUpdateTraceCallback) (std::string nodeid1, std::string nodeid2, double amount);
+  typedef void (* OnFindTraceCallback) (std::string nodeid, uint32_t txID, bool payer);
   typedef void (* OnTxFailTraceCallback) (uint32_t txID,uint32_t node1,uint32_t node2);
   typedef void (* OnTxRetryTraceCallback) (uint32_t txID);
   typedef void (* OnAdTraceCallback) (std::string nodeid);
@@ -98,7 +95,7 @@ public:
       Reg =       7
   };
 
-  void processPacket(Ptr<Packet> p, Ptr<Socket> s);
+  void processPacket(Ptr<Packet> p, Ptr<Socket> s) override;
 
   void onHoldPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
@@ -112,14 +109,19 @@ public:
   
 
   //Transaction Functions
+  void updatePathWeight(std::string name, double amount){
+      neighborTable[name].cost -= amount;
+      m_onPathUpdate(getName(), name, amount);
+  };
+
   void startTransaction(uint32_t txID, uint32_t secret, std::vector<std::string> peerlist, bool payer);
 
   void findFailed(uint32_t txID, uint32_t node1){
    reset(txID);
-   m_onTxFail(txID, node1, std::stoi(m_name));
+   m_onTxFail(txID, node1, std::stoi(getName()));
   };
 
-  void reset(uint32_t txID);
+  virtual void reset(uint32_t txID) override;
 
   uint32_t createTxID(uint32_t txID);
   
@@ -133,9 +135,6 @@ public:
 
   void sendFindReply(uint32_t txID, uint32_t secret, double amount);
 
-   std::string getName(){
-   return m_name;
-  };
   //Routing Functions
   void sendRoutingInfo();
 
@@ -147,19 +146,24 @@ public:
      txidTable.erase(txID);
   };
 
+  void checkFail(uint32_t txID){
+      if (getTxID() == txID)
+         m_onTxFail(txID, 0, std::stoi(getName()));
+  };    
+
   //See if tansaction has ben seen before, or if packet has had a corresponding hold or not. 
   TransactionInfo* checkTransaction(uint32_t txID, uint32_t oldTxID, std::string dest){
    TransactionInfo* trans = &txidTable[txID];
    bool found = false;
    while (trans != NULL ) {
-      if ((dest == trans->nextDest && oldTxID == trans->nextTxID) || dest ==  m_name)
+      if ((dest == trans->nextDest && oldTxID == trans->nextTxID) || dest ==  getName())
          found = true;
       trans = trans->overlap;
    }
    if(found ) {
       if (hasHoldRecv(oldTxID)) {
          updateBCHold(txID);
-         m_onHold(std::stoi(m_name), txID, false);	
+         m_onHold(std::stoi(getName()), txID, false);	
       } 
       return NULL;
    }
@@ -181,12 +185,6 @@ public:
 
 private:
 
-  uint16_t m_local_port;
-  bool m_running;
-  Ipv4Address m_local_ip;
-  Ptr<Socket> m_socket;
-  uint32_t m_packet_size;
-  uint16_t m_peerPort = 5017;
   uint32_t m_seq;
   double m_amount;
   bool m_payer;
@@ -194,25 +192,19 @@ private:
 
   //BLANCpp Atributes
   bool m_route_helper;
-  std::string m_name;
   std::string nextRH;
-  uint32_t m_txID = 10000000000000000000;
   int m_hopMax;  
   std::unordered_map<std::string, std::string> findRHTable;
   std::unordered_map<std::string, std::vector<RoutingEntry>> RoutingTable;
 
   std::unordered_map<uint32_t, TransactionInfo> txidTable; 
   std::unordered_map<uint32_t, std::list<TransactionInfo>> overlapTable; 
-  std::unordered_map<std::string, Neighbor>  neighborTable; 
 
   //Transaction Pair atributes
-  bool TiP = false;
-  double lastSent = 0;
   double sendNum = 0;
 
 
   //Callbacks
-  TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t, uint32_t, Ipv4Address> m_receivedPacket;
   TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t> m_sentPacket;
   TracedCallback<uint32_t, uint32_t, double> m_onFindReply;
   TracedCallback<uint32_t, uint32_t, bool> m_onHold;

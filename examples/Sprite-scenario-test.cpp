@@ -33,11 +33,11 @@
 #include "ns3/drop-tail-queue.h"
 #include "ns3/netanim-module.h"
 #include "ns3/blanc-app-helper.hpp"
-#include "src/ndnSIM/apps/BLANCpp-sync.hpp"
+#include "src/sprite/model/Sprite-sync.hpp"
 #include <unordered_map>
 namespace ns3 {
 
-void onTx(std::string node,  uint32_t txid, bool payer);
+void onTx(std::string node,  uint32_t txid, bool payer, double amount);
 void onTxFail(uint32_t txid);
 void onTxRetry(uint32_t txid);
 void onFindReply(uint32_t, uint32_t, double);
@@ -45,6 +45,7 @@ void onHold(uint32_t, uint32_t, bool);
 void onPay(uint32_t, uint32_t);
 void onPayPath(uint32_t, uint32_t);
 void onPathUpdate(std::string, std::string, double);
+void onAd(std::string node);
 
 
 	
@@ -59,7 +60,6 @@ std::vector<std::string> com_ips;
 std::vector<std::pair<int,std::string>> phy_to_agg_map;
 std::string GetIP(int nodeid);
 std::string GetLinkIP(int node1, int node2);
-
 bool HasIP(int nodeid);
 // Nodes and their corresponding IPs, used to output namespaces in tracefile
 std::vector<std::pair<int,std::string>> node_ip_map;
@@ -102,19 +102,42 @@ std::ofstream flowfile;
 //Gets current time to make packets unique
 time_t seconds;
 
-ns3::ndn::BLANCPPSync sync;
+ns3::SpriteSync sync;
 
 int main (int argc, char *argv[])
 {
 
+  int run = 5, Method2 = 0, Lighting = 0;	
   CommandLine cmd;
+  cmd.AddValue("Run", "Run", run);  
+  cmd.AddValue("Method2", "Method2", Method2);  
+  cmd.AddValue("Lighting", "Lighting", Lighting);  
   cmd.Parse (argc, argv);
 
   // Open the configuration file for reading
-  //std::ifstream configFile ("../topology/interface/blancPP-TestCase2.txt", std::ios::in);
-  std::ifstream configFile ("LNTopo.txt", std::ios::in);
-
+  //std::ifstream configFile ("../topology/interface/Sprite-TestCase2.txt", std::ios::in);
+  std::string prefix = "Blanc";
+  std::string TXmapfile = "src/sprite/config/TXMap.txt";
+  if (Lighting) {
+        prefix = "LN";
+        TXmapfile = "src/sprite/config/LNTXMap.txt";        
+  }
+  std::ifstream configFile ("src/sprite/config/"+prefix+"Topo.txt", std::ios::in);
+  std::ifstream txIDFile (TXmapfile, std::ios::in);
   std::string strLine;
+  std::unordered_map<int,std::string> txMap;
+
+  if (txIDFile.is_open ()) {
+     while (std::getline(txIDFile, strLine)) {
+           std::vector<std::string> params = SplitString(strLine);
+           txMap[std::stoi(params[0])] = params[1];
+           
+     } 
+     sync.setTxTable(txMap);
+     std::cout<<"Map set\n";
+  }
+
+
   bool gettingNodeCount = false, buildingNetworkTopo = false, nonRH = false, RH = false, clients = false, costTable = false; 
   bool failLinks = false, injectData = false;
   std::vector<std::string> netParams;
@@ -123,16 +146,26 @@ int main (int argc, char *argv[])
   int nodeCount = 0;
 
   Config::SetDefault("ns3::QueueBase::MaxSize", StringValue("50p"));
-
+  Config::SetDefault("ns3::TcpSocket::SegmentSize", StringValue("1448"));
   PointToPointHelper p2p;
   NetDeviceContainer devices;
   Ipv4AddressHelper addresses;
 
   std::pair<int,std::string> node_ip_pair;
 
-  BlancPPHelper blancHelper;
+  int HopCount = 12;
+  if (Method2){
+        HopCount = 5;
+  }
+  if (Lighting){
+        HopCount = 8;
+  }
+  SpriteHelper blancHelper;
+  blancHelper.SetAttribute ("Method2", UintegerValue (Method2));
+  blancHelper.SetAttribute ("HopMax", UintegerValue(HopCount));
+
   ApplicationContainer blancApps;
-  sync.setTimeStep(0.01);
+  sync.setTimeStep(0.1);
 
   uint16_t wacPort = 5000;
   uint16_t pdcPort = 6000;
@@ -144,20 +177,41 @@ int main (int argc, char *argv[])
 
 
   //Open trace file for writing
-  tracefile.open("LN-trace.csv", std::ios::out);
+  tracefile.open(prefix+"-Method"+std::to_string(Method2+1)+"-trace"+ std::to_string(run) +".csv", std::ios::out);
   tracefile << "event,txID,time" << std::endl;
 
-  tracefile1.open("LN-path.csv", std::ios::out);
-  tracefile1 << "event,amount,time,node1,node2" << std::endl;  
+  tracefile1.open(prefix+"-Method"+std::to_string(Method2+1)+"-path"+ std::to_string(run) +".csv", std::ios::out);
+  tracefile1 << "event,amount,time,node1,node2,value" << std::endl;  
 
   std::vector<int> lastIP = {10, 0, 0, 4};
-  unordered_map<int,int> RHs;
-  unordered_map<int,int> Cls;
-  unordered_map<std::string,int> has_IP;
-  unordered_map<int,std::vector<double>> costMap;
-  unordered_map<int,std::vector<int>> neighborMap;  
-  int links = 0;
+  std::unordered_map<int,int> RHs;
+  std::unordered_map<int,int> Cls;
+  std::unordered_map<int,std::vector<double>> costToMap;
+  std::unordered_map<int,std::vector<double>> costFromMap; 
+  std::unordered_map<int,std::vector<int>> neighborMap;  
+  std::vector<double> normal_links;
+  std::vector<double> rh_links;
+
+  if(!Lighting){
+
+     std::ifstream normalLinkFile ("src/sprite/config/Normal_links.txt", std::ios::in);
+     if (normalLinkFile.is_open ()) {
+        while (std::getline(normalLinkFile, strLine)) {
+                normal_links.push_back(  std::stod(strLine)  );
+        }
+     }
+
+     std::ifstream rhLinkFile ("src/sprite/config/RH_links.txt", std::ios::in);
+     if (rhLinkFile.is_open ()) {
+        while (std::getline(rhLinkFile, strLine)) {
+                rh_links.push_back(  std::stod(strLine)  );
+        }
+     }     
+  }
+
+  srand( run );
   int startClient = 10000000000;
+
   if (configFile.is_open ()) {
      while (std::getline(configFile, strLine)) {
 
@@ -193,29 +247,18 @@ int main (int argc, char *argv[])
         }
         else if(buildingNetworkTopo == true) {
            //Building network topology
-           netParams = SplitString(strLine);       
-           int mbps = std::stoi(netParams[2])*10;
-           p2p.SetDeviceAttribute( "DataRate", StringValue( std::to_string(mbps)+"Mbps" ) );			
-           double delay = double(rand()%6+4);
+           netParams = SplitString(strLine);
+           std::string mbps = netParams[2];
+           p2p.SetDeviceAttribute( "DataRate", StringValue( mbps ) );			
+           double delay = 5;//double(rand()%6+4);
 
            p2p.SetChannelAttribute("Delay", StringValue(std::to_string(delay)+ "ms"));
+          
            devices = p2p.Install(nodes.Get(std::stoi(netParams[0])), nodes.Get(std::stoi(netParams[1])));
            std::string IP = std::to_string(lastIP[0])+"."+std::to_string(lastIP[1])+"."+std::to_string(lastIP[2])+"."+std::to_string(lastIP[3]);
 
            addresses.SetBase (Ipv4Address (IP.c_str()), Ipv4Mask("255.255.255.252"));
            addresses.Assign (devices);
-           links++;
-
-        /*
-           Ipv4StaticRoutingHelper ipv4RoutingHelper;
-           Ptr<Ipv4> ipv41 = nodes.Get(std::stoi(netParams[0]))->GetObject<Ipv4> ();     
-           Ptr<Ipv4> ipv42 = nodes.Get(std::stoi(netParams[1]))->GetObject<Ipv4> ();     
-
-           std::string IP1 = std::to_string(lastIP[0])+"."+std::to_string(lastIP[1])+"."+std::to_string(lastIP[2])+"."+std::to_string(lastIP[3]);
-           std::string IP2 = std::to_string(lastIP[0])+"."+std::to_string(lastIP[1])+"."+std::to_string(lastIP[2])+"."+std::to_string(lastIP[3] +3);
-
-           Ptr<Ipv4StaticRouting> staticRouting1 = ipv4RoutingHelper.GetStaticRouting (ipv41);
-           staticRouting1->AddHostRouteTo (Ipv4Address (IP2.c_str()), Ipv4Address ("10.1.1.6"),2);*/
 
            lastIP[3]+=4;
            if(lastIP[3]>=256){
@@ -225,7 +268,7 @@ int main (int argc, char *argv[])
            if(lastIP[2]>=256){
                 lastIP[2] = 4;
                 lastIP[1]+=1;
-           }           
+           }             
            node_ip_pair.first = std::stoi(netParams[0]);
            node_ip_pair.second = GetIPFromSubnet(netParams[0], IP, 1);
            node_ip_map.push_back(node_ip_pair);
@@ -239,7 +282,7 @@ int main (int argc, char *argv[])
            link_ip_pair.first = netParams[0]+" "+netParams[1];
            link_ip_pair.second = IP;
 
-           link_ip_map.push_back(link_ip_pair );
+           link_ip_map.push_back(link_ip_pair );           
         }
         else if(false && nonRH == true) {
            //Install apps on PDCs and PMUs for data exchange
@@ -247,34 +290,37 @@ int main (int argc, char *argv[])
 
            //Install non Router Helpers
            //TODO: add in attributes
-           blancHelper.SetAttribute ("PacketSize", UintegerValue (200));
            blancHelper.SetAttribute ("RouterHelper", UintegerValue (0));
            blancHelper.SetAttribute ("Name", StringValue(netParams[0]));
            blancApps = blancHelper.Install (nodes.Get (std::stoi(netParams[0])));
-           auto apps = nodes.Get( std::stoi( netParams[0] ) )->GetApplication( 0 )->GetObject<ns3::BLANCpp>();
+           auto apps = nodes.Get( std::stoi( netParams[0] ) )->GetApplication( 0 )->GetObject<ns3::Sprite>();
            sync.addNode( std::stoi( netParams[0] ),apps );
 
            std::string strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnFindReply";
            Config::ConnectWithoutContext( strcallback, MakeCallback( &onFindReply ) );
            strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnHold";
-           Config::ConnectWithoutContext( strcallback, MakeCallback( &onHold ) );                        
+           Config::ConnectWithoutContext( strcallback, MakeCallback( &onHold ) );  
+           strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnTxRetry";
+           Config::ConnectWithoutContext( strcallback, MakeCallback( &onTxRetry ) );
+           strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnTxFail";
+           Config::ConnectWithoutContext( strcallback, MakeCallback( &onTxFail ) );                           
            strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnPay";
            Config::ConnectWithoutContext( strcallback, MakeCallback( &onPay ) );
+           strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnAd";
+           Config::ConnectWithoutContext( strcallback, MakeCallback( &onAd ) );           
 
         }
         else if(RH == true) {
            //Install apps on WACs and PMUs for data exchange
            netParams = SplitString(strLine);
 
-           blancHelper.SetAttribute ("PacketSize", UintegerValue (200));
            blancHelper.SetAttribute ("RouterHelper", UintegerValue (1));
            blancHelper.SetAttribute ("Name", StringValue(netParams[0]));
 
            blancApps = blancHelper.Install (nodes.Get (std::stoi(netParams[0])));
-           auto apps = nodes.Get( std::stoi( netParams[0] ) )->GetApplication( 0 )->GetObject<ns3::BLANCpp>();
+           auto apps = nodes.Get( std::stoi( netParams[0] ) )->GetApplication( 0 )->GetObject<ns3::Sprite>();
            sync.addNode( std::stoi( netParams[0] ),apps );
            sync.addRH( std::stoi( netParams[0] ),apps );
-
 
            std::string strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnFindReply";
            Config::ConnectWithoutContext( strcallback, MakeCallback( &onFindReply ) );
@@ -284,27 +330,49 @@ int main (int argc, char *argv[])
            Config::ConnectWithoutContext( strcallback, MakeCallback( &onPay ) );
            strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnTxRetry";
            Config::ConnectWithoutContext( strcallback, MakeCallback( &onTxRetry ) );
+           strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnTxFail";
+           Config::ConnectWithoutContext( strcallback, MakeCallback( &onTxFail ) );       
            strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnPayPath";
            Config::ConnectWithoutContext( strcallback, MakeCallback( &onPayPath ) );    
            strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnPathUpdate";
-           Config::ConnectWithoutContext( strcallback, MakeCallback( &onPathUpdate ) );                           
+           Config::ConnectWithoutContext( strcallback, MakeCallback( &onPathUpdate ) );   
+           strcallback = "/NodeList/" + netParams[0] + "/ApplicationList/" + "*/OnAd";
+           Config::ConnectWithoutContext( strcallback, MakeCallback( &onAd ) );                                      
 
            RHs[std::stoi(netParams[0])] = 1;
         }
         else if(clients == true) {
            netParams = SplitString(strLine);
-           sync.addSender( std::stoi(netParams[0]));
+           startClient = std::stoi(netParams[0]);
+           sync.addSender( startClient );
            Cls[std::stoi(netParams[0])] = 1;
         }
         else if(costTable == true) {
            netParams = SplitString(strLine);
-           double linkweight = double(rand()%400+250);
-           if (rand()%1000 > 10) linkweight = linkweight*100;
-           if (Cls[ std::stoi(netParams[0]) ] || Cls[ std::stoi(netParams[1]) ])
-                linkweight = 100000;
-           onPathUpdate(netParams[0], netParams[1], linkweight);
-           onPathUpdate(netParams[1], netParams[0], linkweight);                   
-           costMap[std::stoi(netParams[0])].push_back(linkweight);
+           double linkTo;
+           double linkFrom;
+           if(Lighting){
+              linkTo = std::stod(netParams[2])/ 1000000;
+              linkFrom = std::stod(netParams[3])/ 1000000;
+           }
+           else {
+                linkTo = normal_links[  rand()%normal_links.size()  ];
+                linkFrom =  normal_links[  rand()%normal_links.size()  ];             
+
+                if( RHs[std::stoi(netParams[0])] == 1  ||  RHs[std::stoi(netParams[1])] == 1){
+                        linkTo = rh_links[  rand()%rh_links.size()  ]/ 1000000;
+                        linkFrom = rh_links[  rand()%rh_links.size()  ]/ 1000000;
+                }
+           }
+
+           if (Cls[ std::stoi(netParams[0]) ] || Cls[ std::stoi(netParams[1]) ]){
+                linkTo = 100000000000/ 1000000;
+                linkFrom = 100000000000/ 1000000;
+           }
+           onPathUpdate(netParams[0], netParams[1], linkTo);
+           onPathUpdate(netParams[1], netParams[0], linkFrom);                   
+           costToMap[std::stoi(netParams[0])].push_back(linkTo);
+           costFromMap[std::stoi(netParams[0])].push_back(linkFrom);
            neighborMap[std::stoi(netParams[0])].push_back(std::stoi(netParams[1])); 
         }
         else {
@@ -316,21 +384,19 @@ int main (int argc, char *argv[])
      std::cout << "Cannot open configuration file!!!" << std::endl;
      exit(1);
   }
+        std::cout<<"Done\n" ;
 
   configFile.close();
 
-  std::cout<<"Links: "<<links<<"\n";
-  std::cout<<"Creating apps...\n";
   for ( int i=0; i<( int )nodes.size()-1; i++ ) {
      if (RHs[i] == 0){
         netParams = SplitString(strLine);
         //Install non Router Helpers
         //TODO: add in attributes
-        blancHelper.SetAttribute ("PacketSize", UintegerValue (200));
         blancHelper.SetAttribute ("RouterHelper", UintegerValue (0));
 	blancHelper.SetAttribute ("Name", StringValue(std::to_string(i)));
         blancApps = blancHelper.Install (nodes.Get (i));
-	auto apps = nodes.Get( i )->GetApplication( 0 )->GetObject<ns3::BLANCpp>();
+	auto apps = nodes.Get( i )->GetApplication( 0 )->GetObject<ns3::Sprite>();
         sync.addNode( i,apps );
 
 	std::string strcallback = "/NodeList/" + std::to_string(i) + "/ApplicationList/" + "*/OnFindReply";
@@ -343,17 +409,19 @@ int main (int argc, char *argv[])
         Config::ConnectWithoutContext( strcallback, MakeCallback( &onTx ) );
         strcallback = "/NodeList/" + std::to_string(i) + "/ApplicationList/" + "*/OnTxRetry";
         Config::ConnectWithoutContext( strcallback, MakeCallback( &onTxRetry ) );
+        strcallback = "/NodeList/" + std::to_string(i) + "/ApplicationList/" + "*/OnTxFail";
+        Config::ConnectWithoutContext( strcallback, MakeCallback( &onTxFail ) );        
         strcallback = "/NodeList/" + std::to_string(i) + "/ApplicationList/" + "*/OnPayPath";
         Config::ConnectWithoutContext( strcallback, MakeCallback( &onPayPath ) );    
         strcallback = "/NodeList/" + std::to_string(i) + "/ApplicationList/" + "*/OnPathUpdate";
-        Config::ConnectWithoutContext( strcallback, MakeCallback( &onPathUpdate ) );                     
+        Config::ConnectWithoutContext( strcallback, MakeCallback( &onPathUpdate ) );      
+        strcallback = "/NodeList/" + std::to_string(i) + "/ApplicationList/" + "*/OnAd";
+        Config::ConnectWithoutContext( strcallback, MakeCallback( &onAd ) );
      }
   }
-
   std::cout<<"Setting addresses...\n";
   for (auto it = neighborMap.begin(); it != neighborMap.end(); it++) {
      for (int i = 0; i < it->second.size(); i++){
-        //std::cout<<"Check this out..." <<it->first<<" "<<it->second[i]<<std::endl;
         std::string baseIP =  GetLinkIP(it->first, it->second[i]);
         std::string IP1 = GetIPFromSubnet(std::to_string(it->first), baseIP, 2);
         std::string IP2 = GetIPFromSubnet(std::to_string(it->second[i]), baseIP, 1);
@@ -361,39 +429,35 @@ int main (int argc, char *argv[])
         sync.setAddressTable(it->first, std::to_string(it->second[i]), Ipv4Address(IP1.c_str()) );
         sync.setAddressTable(it->second[i], std::to_string(it->first), Ipv4Address(IP2.c_str()) );
 
-        sync.setNeighborCredit(it->first, std::to_string(it->second[i]), costMap[it->first][i] );
-        sync.setNeighborCredit(it->second[i], std::to_string(it->first), costMap[it->first][i] );
+        sync.setNeighborCredit(it->first, std::to_string(it->second[i]), costToMap[it->first][i],  costFromMap[it->first][i]);
+        sync.setNeighborCredit(it->second[i], std::to_string(it->first), costFromMap[it->first][i], costToMap[it->first][i] );
      }
   }
-
-  std::cout<<"Creating Routing table...\n";
-  //Populate the routing table
-  //Ipv4GlobalRoutingHelper::PopulateRoutingTables();
   std::cout<<"Finshed\n";
-  std::string strcallback;
 
-  sync.beginSync(50.0);
+  std::string strcallback;
+  sync.setStart(run*10000);
+  sync.beginSync(20.0);
 
   //Run actual simulation
-  //Simulator::Stop (Seconds(1.0));
-  Simulator::Stop (Seconds(60.0));
+  Simulator::Stop (Seconds(1150.0));
   Simulator::Run ();
   Simulator::Destroy ();
 
   return 0;
 }
 
-void onTx(std::string node,  uint32_t txid, bool payer){
+void onTx(std::string node,  uint32_t txid, bool payer, double amount){
    if (payer) {
         tracefile << "Start,"<< txid << "," << ns3::Simulator::Now().GetSeconds() << std::endl;
-        tracefile1 << "Start,"<< txid << "," << ns3::Simulator::Now().GetSeconds() << ","<< node << ","<< std::endl;
+        tracefile1 << "Start,"<< txid << "," << ns3::Simulator::Now().GetSeconds() << "," << node << ",," << std::fixed << amount << std::endl;
    }
    else
-        tracefile1 << "Start,"<< txid << "," << ns3::Simulator::Now().GetSeconds() << ",,"<< node << std::endl;
+        tracefile1 << "Start,"<< txid << "," << ns3::Simulator::Now().GetSeconds() << ",," << node << "," << std::fixed << amount << std::endl;
 };
 
 void onFindReply(uint32_t node,  uint32_t txid, double amount){
-   sync.onFindReplyPacket(node, txid, amount);
+   //sync.onFindReplyPacket(node, txid, amount);
 };
 
 void onHold(uint32_t node,  uint32_t txid, bool received){
@@ -406,6 +470,7 @@ void onPay(uint32_t node,  uint32_t txid){
 };
 
 void onTxFail(uint32_t txid){
+   tracefile << "Fail," << txid<<","<<ns3::Simulator::Now().GetSeconds() << std::endl;
    sync.onTxFail(txid);	
 };
 
@@ -420,10 +485,13 @@ void onPayPath(uint32_t nodeID, uint32_t txid){
 };
 
 void onPathUpdate(std::string nodeID1, std::string nodeID2, double amount){
-   tracefile1 << "PathUpdate,"<< amount << "," << ns3::Simulator::Now().GetSeconds() << ","  <<nodeID1 <<"," <<nodeID2<< std::endl;
+   tracefile1 << "PathUpdate,"<< std::fixed << amount << "," << ns3::Simulator::Now().GetSeconds() << ","  <<nodeID1 <<"," <<nodeID2<< std::endl;
 
 };
 
+void onAd(std::string node){
+   tracefile << "Ad," << node<<","<<ns3::Simulator::Now().GetSeconds() << std::endl;
+}
 
 
 //Split a string delimited by space

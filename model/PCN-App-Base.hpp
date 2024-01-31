@@ -33,14 +33,18 @@ class Packet;
 class PCN_App_Base : public Application
 {
 public:
-  
+  typedef void (* ReceivedPacketTraceCallback) (uint32_t nodeid, Ptr<Packet> packet, const Address &address, 
+		  uint32_t localport, uint32_t packetSize, uint32_t subscription, Ipv4Address localip);
+
    struct Neighbor {            // Structure declaration
       Ipv4Address address;
       Ptr<Socket> socket;
-      double cost;
+      double cost;//costto
+      double costFrom;
       Neighbor() :
          socket(NULL),
-         cost(0) {}
+         cost(0),
+         costFrom(0) {}         
    };    
 
   static TypeId GetTypeId (void);
@@ -87,14 +91,18 @@ public:
       Reg =       7
   };
 
-  virtual void processPacket(Ptr<Packet> p, Ptr<Socket> s);  
+  virtual void processPacket(Ptr<Packet> p, Ptr<Socket> s) {};  
 
   //Transaction Functions
-  bool getTiP(){ return TiP; }; 
+  bool getTiP(){ return m_TiP; }; 
+  void setTiP(bool TiP){ m_TiP = TiP; }; 
+
+
+  bool getRunning(){ return m_running; }; 
 
   void startTransaction(uint32_t txID, uint32_t secret, std::vector<std::string> peerlist, bool payer);
 
-  void reset(uint32_t txID);
+  virtual void reset(uint32_t txID) {};
   
   void forwardPacket(blancHeader packetHeader, std::string nextHop){
      forwardPacket(packetHeader,nextHop,"", 0);
@@ -112,20 +120,22 @@ public:
   void updateBCHoldRecv(uint32_t txID){};
 
   void updateBCPay(uint32_t txID){};  
-
-  void updatePathWeight(std::string name, double amount){
-      neighborTable[name].cost -= amount;
-      m_onPathUpdate(m_name, name, amount);
-  };
   
   std::string getName(){
    return m_name;
   };
 
-  void checkFail(uint32_t txID){
-      if (TiP && m_txID == txID)
-         m_onTxFail(txID, 0, std::stoi(m_name));
-  };  
+  void setName(std::string name){
+   m_name = name;
+  };
+
+  uint32_t getTxID(){
+   return m_txID;
+  };
+
+  void setTxID(uint32_t txID){
+   m_txID = txID;
+  };
 
   void setNeighborCredit(std::string name, double amount);
 
@@ -139,25 +149,6 @@ public:
 
   void onRegPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
   void send(Ptr<Socket> s, Ptr<Packet> p);
-
-  //See if tansaction has ben seen before, or if packet has had a corresponding hold or not. 
-  TransactionInfo* checkTransaction(uint32_t txID, uint32_t oldTxID, std::string dest){
-   TransactionInfo* trans = &txidTable[txID];
-   bool found = false;
-   while (trans != NULL ) {
-      if ((dest == trans->nextDest && oldTxID == trans->nextTxID) || dest ==  m_name)
-         found = true;
-      trans = trans->overlap;
-   }
-   if(found ) {
-      if (hasHoldRecv(oldTxID)) {
-         updateBCHold(txID);
-         m_onHold(std::stoi(m_name), txID, false);	
-      } 
-      return NULL;
-   }
-   return &txidTable[txID];
-  }
 
   void 
   insertTimeout(uint32_t txID, std::string src, uint64_t timeout){};
@@ -195,7 +186,26 @@ public:
 
   void HandleRead (Ptr<Socket> socket);
 private:
+  double lastSent = 0;
 
+   //Transaction Pair atributes
+   bool m_TiP = false;
+
+   bool m_running;
+   uint32_t m_txID = 10000000000000000000;
+   std::string m_name;
+   Ptr<Socket> m_socket;
+   Ipv4Address m_local_ip;
+   uint16_t m_local_port;
+   uint16_t m_peerPort = 5017;
+   uint32_t m_packet_size;
+   uint32_t m_seq;
+
+
+  TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t, uint32_t, Ipv4Address> m_receivedPacket;
+
+   protected:
+   std::unordered_map<std::string, Neighbor>  neighborTable; 
 };
 
 } // namespace ns3

@@ -31,6 +31,7 @@
 #include "ns3/blanc-header.h"
 #include "ns3/socket.h"
 #include "ns3/packet.h"
+#include "ns3/PCN-App-Base.hpp" 
 
 namespace ns3 {
 
@@ -48,20 +49,16 @@ class Packet;
  *
  * Every packet received is sent back to the client.
  */
-class BLANCpp : public Application
+class Sprite : public PCN_App_Base
 {
 public:
-
-  typedef void (* ReceivedPacketTraceCallback) (uint32_t nodeid, Ptr<Packet> packet, const Address &address, 
-		  uint32_t localport, uint32_t packetSize, uint32_t subscription, Ipv4Address localip);
   typedef void (* SentPacketTraceCallback) (uint32_t nodeid, Ptr<Packet> packet, const Address &address, uint32_t localport);
 
-  typedef void (* OnFindReplyTraceCallback) (uint32_t nodeid, uint32_t txID, double amount);
   typedef void (* OnHoldTraceCallback) (uint32_t nodeid, uint32_t txID, bool received);
   typedef void (* OnPayTraceCallback) (uint32_t nodeid, uint32_t txID);
   typedef void (* OnPayPathTraceCallback) (uint32_t nodeid, uint32_t txID);
-  typedef void (* OnTxTraceCallback) (std::string nodeid, uint32_t txID, bool payer, double amount);
   typedef void (* OnPathUpdateTraceCallback) (std::string nodeid1, std::string nodeid2, double amount);
+  typedef void (* OnTxTraceCallback) (std::string nodeid, uint32_t txID, bool payer, double amount);
   typedef void (* OnTxFailTraceCallback) (uint32_t txID);
   typedef void (* OnTxRetryTraceCallback) (uint32_t txID);
   typedef void (* OnAdTraceCallback) (std::string nodeid);
@@ -95,17 +92,6 @@ public:
          maxRecv(0),
          complete(false) {}
    };   
-
-   struct Neighbor {            // Structure declaration
-      Ipv4Address address;
-      Ptr<Socket> socket;
-      double costTo;
-      double costFrom;
-      Neighbor() :
-         socket(NULL),
-         costTo(0), 
-         costFrom(0) {}
-   }; 
 
    struct TransactionInfo {             // Structure declaration
       uint32_t nextTxID;         // Member (int variable)
@@ -144,8 +130,8 @@ public:
    };    
 
   static TypeId GetTypeId (void);
-  BLANCpp ();
-  virtual ~BLANCpp ();
+  Sprite ();
+  virtual ~Sprite ();
   
   //Incoming Packet handling 
   enum PacketType { 
@@ -163,13 +149,11 @@ public:
       AdvertReply =    12
   };
 
-  void processPacket(Ptr<Packet> p, Ptr<Socket> s) overide;
+  void processPacket(Ptr<Packet> p, Ptr<Socket> s) override;
 
   void onHoldPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
   void onHoldRecvPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
-
-  void onFindPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
   void onHoldReply(Ptr<Packet> p, blancHeader ph);
 
@@ -185,11 +169,10 @@ public:
   onAdvertReply(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s);
 
   //Transaction Functions
-  bool getTiP(){ return TiP; }; 
 
   void startTransaction(uint32_t txID, std::vector<std::string> peerlist, bool payer, double amount);
 
-  void reset(uint32_t txID);
+  virtual void reset(uint32_t txID) override;
 
   uint32_t createTxID(uint32_t txID);
   
@@ -266,7 +249,7 @@ public:
 
   void 
   updatePathWeight(std::string name, double amount, bool sender){
-      neighborTable[name].costTo -= amount;
+      neighborTable[name].cost -= amount;
       neighborTable[name].costFrom += amount;
       for (auto i = RoutingTable.begin(); i != RoutingTable.end(); i++){
          for (auto each = i->second.begin(); each != i->second.end(); each++){
@@ -282,7 +265,7 @@ public:
             }
          }
       }
-      m_onPathUpdate(m_name, name, amount);
+      this->m_onPathUpdate(getName(), name, amount);
   };
   
   void 
@@ -331,9 +314,6 @@ public:
   void 
   setNeighborCredit(std::string name, double amountTo, double amountFrom);
 
-  void 
-  setNeighbor(std::string name, Ipv4Address address);
-
   //Utility Functions
   bool 
   hasHoldRecv(uint32_t txID);
@@ -350,8 +330,6 @@ public:
   void 
   checkTe2(uint32_t txID, std::string src, bool sender);
 
-  Ptr<Socket>
-  getSocket(std::string dest);
 
   uint32_t 
   getHighestAmount(std::string dest);
@@ -374,10 +352,7 @@ public:
    //TODO:: Revist this function for optimization
   std::string 
   createPath(std::string dest, double amount, std::vector<std::string> attempt_list, bool RH1);
-
-  std::string 
-  readPayload(Ptr<Packet> p);
-
+  
   std::string 
   findSource(Ptr<Socket> s);
 
@@ -413,26 +388,16 @@ virtual void StartApplication (void);
 
 private:
 
-
-  uint16_t m_local_port;
-  bool m_running;
-  Ipv4Address m_local_ip;
-  Ptr<Socket> m_socket;
-  uint32_t m_packet_size;
-  uint16_t m_peerPort = 5017;
-  uint32_t m_seq;
   double m_amount;
   bool m_payer;
   int m_maxRetires = 4;//TODO:: add as varaible
 
 
-  //BLANCpp Atributes
+  //Sprite Atributes
   bool m_route_helper;
   bool method2 = false;
-  std::string m_name;
   std::string nextRH;
-  uint32_t m_txID = 1000000;
-  double lastSent = 0;
+  //uint32_t m_txID = 1000000;
   int m_hopMax;
 
   std::unordered_map<std::string, std::string> findRHTable;
@@ -448,17 +413,13 @@ private:
   std::unordered_map<uint32_t, std::vector<std::string>> attempted_paths;
   std::unordered_map<uint32_t, std::vector<TransactionInfo>> overlapTable; 
   std::unordered_map<uint32_t, std::vector<Ptr<Socket>>> srcTrail; 
-  std::unordered_map<std::string, Neighbor>  neighborTable; 
   std::unordered_map<std::string, double>  sendOverlapTable; 
 
   //Transaction Pair atributes
-  bool TiP = false;
   bool debug = false;
 
   //Callbacks
-  TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t, uint32_t, Ipv4Address> m_receivedPacket;
   TracedCallback<uint32_t, Ptr<Packet>, const Address &, uint32_t> m_sentPacket;
-  TracedCallback<uint32_t, uint32_t, double> m_onFindReply;
   TracedCallback<uint32_t, uint32_t, bool> m_onHold;
   TracedCallback<uint32_t, uint32_t> m_onPay;
   TracedCallback<uint32_t, uint32_t> m_onPayPath;

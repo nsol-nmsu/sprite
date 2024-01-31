@@ -25,7 +25,7 @@
 #include "ns3/node-container.h"
 #include "ns3/object-factory.h"
 #include "ns3/ipv4-address.h"
-#include "ns3/BLANC++.hpp"
+#include "ns3/Sprite.hpp"
 #include "ns3/BLANC.hpp"
 #include "ns3/SpeedyM.hpp"
 
@@ -37,7 +37,7 @@ namespace ns3 {
  *        delay and to determine if some packets are lost.
  */
 
-class BlancPPHelper
+class SpriteHelper
 {
 public:
   /**
@@ -45,7 +45,7 @@ public:
    * to set up simulations with blanc application.
    *
    */
-  BlancPPHelper ();
+  SpriteHelper ();
 
   /**
    * Record an attribute to be set in each Application after it is is created.
@@ -68,7 +68,7 @@ public:
 
 private:
   ObjectFactory m_factory; //!< Object factory.
-  Ptr<BLANCpp> m_blanc; //!< The last created server application
+  Ptr<Sprite> m_blanc; //!< The last created server application
 };
 
 class BlancHelper

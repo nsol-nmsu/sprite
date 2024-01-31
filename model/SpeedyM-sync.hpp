@@ -25,15 +25,13 @@
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/point-to-point-module.h"
-#include "ns3/ndnSIM-module.h"
-#include "ndn-synchronizer.hpp"
+#include "synch.hpp"
 
 #include "ns3/SpeedyM.hpp"
 
 namespace ns3 {
-namespace ndn {
 
-class SpeedySync :  public Synchronizer {
+class SpeedySync :  public Synch {
 
 public:
 
@@ -137,7 +135,6 @@ private:
   uint32_t m_txID= 0;
 };
 
-}
 }
 #endif
 

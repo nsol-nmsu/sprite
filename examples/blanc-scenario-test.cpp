@@ -33,7 +33,7 @@
 #include "ns3/drop-tail-queue.h"
 #include "ns3/netanim-module.h"
 #include "ns3/blanc-app-helper.hpp"
-#include "src/ndnSIM/apps/BLANC-sync.hpp"
+#include "src/sprite/model/BLANC-sync.hpp"
 #include <unordered_map>
 namespace ns3 {
 
@@ -103,7 +103,7 @@ std::ofstream flowfile;
 //Gets current time to make packets unique
 time_t seconds;
 
-ns3::ndn::BLANCSync sync;
+ns3::BLANCSync sync;
 
 int main (int argc, char *argv[])
 {
@@ -117,13 +117,13 @@ int main (int argc, char *argv[])
   // Open the configuration file for reading
   //std::ifstream configFile ("../topology/interface/blancPP-TestCase2.txt", std::ios::in);
   std::string prefix = "Blanc";
-  std::string TXmapfile = "TXMap.txt";
+  std::string TXmapfile = "src/sprite/config/TXMap.txt";
   if (Lighting) {
         prefix = "LN";
         sync.setLimit(10000);
-        TXmapfile = "LNTXMap.txt";        
+        TXmapfile = "src/sprite/config/LNTXMap.txt";        
   }
-  std::ifstream configFile (prefix+"Topo.txt", std::ios::in);
+  std::ifstream configFile ("src/sprite/config/" + prefix+"Topo.txt", std::ios::in);
 
 
 
@@ -131,7 +131,7 @@ int main (int argc, char *argv[])
   bool gettingNodeCount = false, buildingNetworkTopo = false, nonRH = false, RH = false, clients = false, costTable = false; 
   bool failLinks = false, injectData = false;
   std::vector<std::string> netParams;
-  unordered_map<int,std::string> txMap;
+  std::unordered_map<int,std::string> txMap;
 
 
   std::ifstream txIDFile (TXmapfile, std::ios::in);
@@ -184,24 +184,24 @@ int main (int argc, char *argv[])
   tracefile1 << "event,amount,time,node1,node2,value" << std::endl;  
 
   std::vector<int> lastIP = {10, 0, 0, 4};
-  unordered_map<int,int> RHs;
-  unordered_map<int,int> Cls;
-  unordered_map<int,std::vector<double>> costToMap;
-  unordered_map<int,std::vector<double>> costFromMap;
-  unordered_map<int,std::vector<int>> neighborMap;  
+  std::unordered_map<int,int> RHs;
+  std::unordered_map<int,int> Cls;
+  std::unordered_map<int,std::vector<double>> costToMap;
+  std::unordered_map<int,std::vector<double>> costFromMap;
+  std::unordered_map<int,std::vector<int>> neighborMap;  
   std::vector<double> normal_links;
   std::vector<double> rh_links;  
 
   if(!Lighting){
 
-     std::ifstream normalLinkFile ("Normal_links.txt", std::ios::in);
+     std::ifstream normalLinkFile ("src/sprite/config/Normal_links.txt", std::ios::in);
      if (normalLinkFile.is_open ()) {
         while (std::getline(normalLinkFile, strLine)) {
                 normal_links.push_back(  std::stod(strLine)  );
         }
      }
 
-     std::ifstream rhLinkFile ("RH_links.txt", std::ios::in);
+     std::ifstream rhLinkFile ("src/sprite/config/RH_links.txt", std::ios::in);
      if (rhLinkFile.is_open ()) {
         while (std::getline(rhLinkFile, strLine)) {
                 rh_links.push_back(  std::stod(strLine)  );

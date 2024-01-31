@@ -29,7 +29,7 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <stdio.h>
-#include "BLANCpp-sync.hpp"
+#include "Sprite-sync.hpp"
 #include "ns3/ptr.h"
 #include "ns3/log.h"
 #include "ns3/simulator.h"
@@ -45,23 +45,22 @@ using namespace std;
 
 
 namespace ns3 {
-namespace ndn {
 
 // On object construction create sockets and set references
-BLANCPPSync::BLANCPPSync() {
+SpriteSync::SpriteSync() {
 
 }
 
 void
-BLANCPPSync::syncEvent(){
-   Synchronizer::syncEvent();
+SpriteSync::syncEvent(){
+   Synch::syncEvent();
    if(!m_tablesMade) createTables();
    injectPackets( );
 }
 
 bool DYNAMIC = true;
 void
-BLANCPPSync::injectPackets( ) {
+SpriteSync::injectPackets( ) {
 //Go through list and find two apps not currently in a transaction. 
 int sender, reciver;
 std::string rh1, rh2;
@@ -80,8 +79,6 @@ if(!hasMap){
    vector<int> pair;
    while (pair.size() < 2 && options.size() > 1){
       uint32_t choice = rand()%options.size();
-        //std::cout<<"Router is "<<nodes[options[choice]]->getRH()<<std::endl;
-
       if ( count == 0 && nodes[ options[choice] ]->getRH("") != "") {
          rh1 = nodes[ options[choice] ]->getRH("");
          count++;
@@ -89,7 +86,6 @@ if(!hasMap){
       }
       else if (rh1 != nodes[ options[choice] ]->getRH("") && 
             nodes[ options[choice] ]->getRH("") != "") {
-         //std::cout<<"RH is "<<nodes[ options[choice] ]->getRH()<<std::endl;
          rh2 = nodes[ options[choice] ]->getRH("");
          count++;
          pair.push_back(options[choice]);
@@ -105,14 +101,11 @@ if(!hasMap){
       
    }
    if (pair.size() != 2) {
-      //std::cout<<"No pairs\n";
       return;
    }
 
    sender = pair[0];
    reciver = pair[1];
-   //rh1 = "7";
-   //rh2 = "1";
 }  
 else {
    std::vector<std::string> txInfo = SplitString(txMap[m_txID],'|');
@@ -125,10 +118,6 @@ else {
    rh2 = nodes[ reciver ]->getRH(rh1);
    if(nodes[sender]->getTiP() || nodes[reciver]->getTiP() || rh1 == rh2
          || rh1 == "" || rh2 == ""){
-      //std::cout<<sender<<" "<<reciver<<" "<<rh1<<"  "<<rh2<<"   "<<m_txID<<std::endl;
-      //if (nodes[sender]->getTiP() ) std::cout<<"Sender\n";
-      //if (nodes[reciver]->getTiP() ) std::cout<<"Reciver\n";
-
       limit++;
       return;
    }
@@ -154,22 +143,22 @@ else {
 }
 
 void
-BLANCPPSync::addNode( int node, Ptr<BLANCpp> app ) {
+SpriteSync::addNode( int node, Ptr<Sprite> app ) {
    nodes[node] = app;
 }
 
 void
-BLANCPPSync::addSender( int node){
+SpriteSync::addSender( int node){
    senders[node] = nodes[node];
 }
 
 void
-BLANCPPSync::addRH( int node, Ptr<BLANCpp> routingHelper ){
+SpriteSync::addRH( int node, Ptr<Sprite> routingHelper ){
    routingHelpers[node] = routingHelper;
 }
 
 void
-BLANCPPSync::createTables( ) {
+SpriteSync::createTables( ) {
    m_tablesMade = true;
    std::unordered_map<std::string, std::vector<std::string>> reachableMap;
    for(auto each = routingHelpers.begin(); each != routingHelpers.end(); each++){
@@ -187,32 +176,28 @@ BLANCPPSync::createTables( ) {
 }
 
 void
-BLANCPPSync::onHoldPacket( uint32_t node, uint32_t txID, bool received){
-   //std::cout<<received<<"  "<<txID<<" reporting\n"; 
-
+SpriteSync::onHoldPacket( uint32_t node, uint32_t txID, bool received){
    uint32_t node1 = txIDmap[txID][1];
    nodes[node1]->sendPayPacket(txID);
 }
 
 void
-BLANCPPSync::onPayPacket( uint32_t node, uint32_t txID){
+SpriteSync::onPayPacket( uint32_t node, uint32_t txID){
   if(txIDmap[txID][0] == node){
      uint32_t node1 = txIDmap[txID][0];
      uint32_t node2 = txIDmap[txID][1];
 
      nodes[node1]->reset(txID);
      nodes[node2]->reset(txID);
-
-     //std::cout<<"All finished\n\n\n";
   } 
 }
 
 void
-BLANCPPSync::onTxFail(uint32_t txID){
+SpriteSync::onTxFail(uint32_t txID){
    uint32_t node1 = txIDmap[txID][0];
    uint32_t node2 = txIDmap[txID][1];
 
    nodes[node1]->reset(txID);
    nodes[node2]->reset(txID);}
-}
+
 }

@@ -25,15 +25,13 @@
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/point-to-point-module.h"
-#include "ns3/ndnSIM-module.h"
-#include "ndn-synchronizer.hpp"
+#include "synch.hpp"
 
 #include "ns3/BLANC.hpp"
 
 namespace ns3 {
-namespace ndn {
 
-class BLANCSync :  public Synchronizer {
+class BLANCSync :  public Synch {
 
 public:
 
@@ -175,6 +173,6 @@ private:
 };
 
 }
-}
+
 #endif
 

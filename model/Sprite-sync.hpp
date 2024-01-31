@@ -19,27 +19,25 @@
  *
  */
 
-#ifndef BLANCPP_SYNCH_DOE_H
-#define BLANCPP_SYNCH_DOE_H
+#ifndef SPRITE_SYNCH_DOE_H
+#define SPRITE_SYNCH_DOE_H
 
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/point-to-point-module.h"
-#include "ns3/ndnSIM-module.h"
-#include "ndn-synchronizer.hpp"
+#include "synch.hpp"
 
-#include "ns3/BLANC++.hpp"
+#include "ns3/Sprite.hpp"
 
 namespace ns3 {
-namespace ndn {
 
-class BLANCPPSync :  public Synchronizer {
+class SpriteSync :  public Synch {
 
 public:
 
   /** \brief  On object construction create sockets and set references.
    */
-  BLANCPPSync();
+  SpriteSync();
 
 
   virtual void
@@ -70,13 +68,13 @@ public:
    *      \param sender reference to the appliaction instance
    */
   void
-  addNode( int node, Ptr<BLANCpp> app );
+  addNode( int node, Ptr<Sprite> app );
 
   void
   addSender( int node);  
 
   void
-  addRH( int node, Ptr<BLANCpp> routingHelper );
+  addRH( int node, Ptr<Sprite> routingHelper );
 
   virtual void
   sendSync(){};
@@ -86,7 +84,7 @@ public:
   virtual void
   receiveSync(){};
 
-  void setFindTable(uint32_t node, std::string RH, std::string nextHop){
+  void setFindTable(int node, std::string RH, std::string nextHop){
      nodes[node]->setFindTable(RH, nextHop);
   };
 
@@ -94,7 +92,7 @@ public:
      m_txID = start;
   };  
 
-  void setNeighborCredit(uint32_t node, std::string name, double amountTo, double amountFrom){
+  void setNeighborCredit(int node, std::string name, double amountTo, double amountFrom){
      nodes[node]->setNeighborCredit(name, amountTo, amountFrom);
   };
 
@@ -137,9 +135,9 @@ public:
 private:
 
 
-  std::unordered_map<int,Ptr<BLANCpp>> nodes;
-  std::unordered_map<int,Ptr<BLANCpp>> senders;
-  std::unordered_map<int,Ptr<BLANCpp>> routingHelpers;
+  std::unordered_map<int,Ptr<Sprite>> nodes;
+  std::unordered_map<int,Ptr<Sprite>> senders;
+  std::unordered_map<int,Ptr<Sprite>> routingHelpers;
   std::unordered_map<int,std::string> txMap;
   bool hasMap;
 
@@ -154,7 +152,6 @@ private:
   uint32_t m_txID= 0;
 };
 
-}
 }
 #endif
 

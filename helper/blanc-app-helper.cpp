@@ -24,26 +24,26 @@
 
 namespace ns3 {
 
-BlancPPHelper::BlancPPHelper ()
+SpriteHelper::SpriteHelper ()
 {
-  m_factory.SetTypeId ("ns3::BLANCpp");
+  m_factory.SetTypeId ("ns3::Sprite");
 }
 
 void
-BlancPPHelper::SetAttribute (std::string name, const AttributeValue &value)
+SpriteHelper::SetAttribute (std::string name, const AttributeValue &value)
 {
   m_factory.Set (name, value);
 }
 
 ApplicationContainer
-BlancPPHelper::Install (NodeContainer c)
+SpriteHelper::Install (NodeContainer c)
 {
   ApplicationContainer apps;
   for (NodeContainer::Iterator i = c.Begin (); i != c.End (); ++i)
     {
       Ptr<Node> node = *i;
 
-      m_blanc = m_factory.Create<BLANCpp> ();
+      m_blanc = m_factory.Create<Sprite> ();
       node->AddApplication (m_blanc);
       apps.Add (m_blanc);
 

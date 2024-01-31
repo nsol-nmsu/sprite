@@ -29,7 +29,9 @@
  #include "ns3/string.h"
  #include "ns3/trace-source-accessor.h"
  #include "ns3/ipv4.h"
- #include "BLANC.hpp" 
+ #include "PCN-App-Base.hpp" 
+
+
  #define HOPMAX 6
  namespace ns3 {
  
@@ -41,7 +43,25 @@
  {
    static TypeId tid = TypeId ("ns3::PCN_App_Base")
      .SetParent<Application> ()
-     .AddConstructor<PCN_App_Base> ()                      
+     .AddConstructor<PCN_App_Base> () 
+     .AddAttribute ("Port", "Port on which we listen for incoming connections.",
+                    UintegerValue (7),
+                    MakeUintegerAccessor (&PCN_App_Base::m_local_port),
+                    MakeUintegerChecker<uint16_t> ())     
+     .AddAttribute ("Name",
+                   "Name of node.",
+                   StringValue ("0"),
+                   MakeStringAccessor (&PCN_App_Base::m_name),
+                   MakeStringChecker())    
+     .AddAttribute ("PacketSize",
+                   "The size of outbound packet, typically acknowledgement packets from server application. 536 not fragmented on 1500 MTU",
+                   UintegerValue (536),
+                   MakeUintegerAccessor (&PCN_App_Base::m_packet_size),
+		             MakeUintegerChecker<uint32_t> ())      
+     .AddTraceSource ("ReceivedPacketS",
+                     "A packet has been received",
+                     MakeTraceSourceAccessor (&PCN_App_Base::m_receivedPacket),
+                     "ns3::Blanc::ReceivedPacketTraceCallback")                                                 
    ;
    return tid;
  }
@@ -106,9 +126,7 @@ PCN_App_Base::ReceivePacket (Ptr<Socket> s) {
    Address from;
    while (packet = s->RecvFrom (from)) {
       if (packet->GetSize () > 0) {
-
 	      //Get the first interface IP attached to this node (this is where socket is bound, true nodes that have only 1 IP)
-    	   //Ptr<NetDevice> PtrNetDevice = PtrNode->GetDevice(0);
     	   Ptr <Node> PtrNode = this->GetNode();
     	   Ptr<Ipv4> ipv4 = PtrNode->GetObject<Ipv4> (); 
     	   Ipv4InterfaceAddress iaddr = ipv4->GetAddress (1,0);  
@@ -185,7 +203,6 @@ PCN_App_Base::forwardPacket(blancHeader packetHeader, std::string nextHop, std::
 
   Ptr<Packet> p;
   p = Create<Packet> (reinterpret_cast<const uint8_t*> (payload.c_str()), payload.size());  
-  //p = Create<Packet> (100);
     packetHeader.setPayloadSize(payload.size());
 
   uint64_t m_bytesSent = 100;
@@ -199,8 +216,7 @@ PCN_App_Base::forwardPacket(blancHeader packetHeader, std::string nextHop, std::
   p->AddHeader(packetHeader);
 
   Simulator::Schedule(Seconds(delay), &PCN_App_Base::send, this, socket, p);
-  //send(socket, p);
-  //socket->Send (p);
+
   NS_LOG_INFO ("Sent " << 100 << " bytes to " << peerAddress << ":" << m_peerPort);
 
   //Increase sequence number for next packet
@@ -241,9 +257,7 @@ PCN_App_Base::send(Ptr<Socket> s, Ptr<Packet> p){
       convert << (char)buffer[a];
    }
 
-
    std::string payload = convert.str();
-   //std::cout << pType <<"  "<<payload <<"  payload "<<std::endl;
 
    if(lastSent == Simulator::Now().GetSeconds()){
       Simulator::Schedule(Seconds(0.000001), &PCN_App_Base::send, this, s, p);
@@ -285,7 +299,6 @@ PCN_App_Base::getSocket(std::string dest)
 
    neighborTable[dest].socket = socket;
 
-   //forwardPacket(packetHeader, socket, payload, 0);
    Ptr<Packet> p = Create<Packet> (reinterpret_cast<const uint8_t*> (payload.c_str()), payload.size());  
    p->AddHeader(packetHeader);
 

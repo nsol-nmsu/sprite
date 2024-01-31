@@ -45,36 +45,18 @@
  SpeedyM::GetTypeId (void)
  {
    static TypeId tid = TypeId ("ns3::SpeedyM")
-     .SetParent<Application> ()
+     .SetParent<PCN_App_Base> ()
      .AddConstructor<SpeedyM> ()
-     .AddAttribute ("Port", "Port on which we listen for incoming connections.",
-                    UintegerValue (7),
-                    MakeUintegerAccessor (&SpeedyM::m_local_port),
-                    MakeUintegerChecker<uint16_t> ())
-     .AddAttribute ("PacketSize",
-                   "The size of outbound packet, typically acknowledgement packets from server application. 536 not fragmented on 1500 MTU",
-                   UintegerValue (536),
-                   MakeUintegerAccessor (&SpeedyM::m_packet_size),
-		   MakeUintegerChecker<uint32_t> ())
      .AddAttribute ("RouterHelper",
                    "True if application will run in Router helper mode.",
                    UintegerValue (0),
                    MakeUintegerAccessor (&SpeedyM::m_route_helper),
-                   MakeUintegerChecker<uint32_t> ())
-     .AddAttribute ("Name",
-                   "Name of node.",
-                   StringValue ("0"),
-                   MakeStringAccessor (&SpeedyM::m_name),
-                   MakeStringChecker())     
+                   MakeUintegerChecker<uint32_t> ())   
      .AddAttribute ("Method2",
                    "Bool.",
                    UintegerValue (0),
                    MakeUintegerAccessor (&SpeedyM::method2),
                    MakeUintegerChecker<uint32_t> ())
-      .AddTraceSource ("ReceivedPacketS",
-                     "A packet has been received",
-                     MakeTraceSourceAccessor (&SpeedyM::m_receivedPacket),
-                     "ns3::SpeedyM::ReceivedPacketTraceCallback")
      .AddTraceSource ("SentPacketS",
                      "A packet has been sent",
                      MakeTraceSourceAccessor (&SpeedyM::m_sentPacket),
@@ -123,14 +105,11 @@
 SpeedyM::SpeedyM ()
  {
    NS_LOG_FUNCTION_NOARGS ();
-   m_socket = 0;
-   m_running = false;
  }
  
 SpeedyM::~SpeedyM()
  {
    NS_LOG_FUNCTION_NOARGS ();
-   m_socket = 0;
  }
  
  
@@ -138,7 +117,7 @@ void
 SpeedyM::StartApplication (void)
  {
    NS_LOG_FUNCTION_NOARGS ();
- 
+   PCN_App_Base::StartApplication();
    if (m_route_helper){
       double time = 0;
       Simulator::Schedule(Seconds(time), &SpeedyM::sendAdvertPacket, this);
@@ -153,7 +132,7 @@ SpeedyM::processPacket(Ptr<Packet> p, Ptr<Socket> s){
    p->RemoveHeader(packetHeader);
    uint32_t pType = packetHeader.GetPacketType();
    uint32_t extraSize = p->GetSize() - packetHeader.GetPayloadSize();
-   m_onAd(m_name, std::to_string(pType));
+   m_onAd(getName(), std::to_string(pType));
 
  
    Ptr<Packet> pkt  = p->Copy();
@@ -194,16 +173,16 @@ SpeedyM::sendAdvertPacket()
 {
    for (auto it = neighborTable.begin(); it != neighborTable.end(); it++){
       if(SplitString(it->first, '|').size()!=1) continue;
-      std::string payload = m_name;
+      std::string payload = getName();
       payload += "| ";
       
       blancHeader packetHeader;
       packetHeader.SetPacketType(Advert);
 
-      if (DEBUG1) std::cout<<"Node "<<m_name<<" sending to"<<it->first<<std::endl;
+      if (DEBUG1) std::cout<<"Node "<<getName()<<" sending to"<<it->first<<std::endl;
       forwardPacket(packetHeader, it->first, payload, 0);
-      TreeTable[m_name].parent = "";
-      TreeTable[m_name].coordinate = " ";
+      TreeTable[getName()].parent = "";
+      TreeTable[getName()].coordinate = " ";
    }
 }
 
@@ -211,7 +190,7 @@ void
 SpeedyM::onAdvertPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
 {
    std::string payload = readPayload(p);
-   if(DEBUG1) std::cout << m_name<<" "<<payload <<"  payload "<<std::endl;
+   if(DEBUG1) std::cout << getName()<<" "<<payload <<"  payload "<<std::endl;
 
    std::vector<std::string> items = SplitString(payload, '|');
    std::string treeId = items[0];
@@ -220,7 +199,7 @@ SpeedyM::onAdvertPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
 
 
    if(false){
-      std::cout << "*****Advertisment packet*****\n" <<m_name <<"  NodeID "<<ns3::Simulator::Now().GetSeconds()<< std::endl;
+      std::cout << "*****Advertisment packet*****\n" <<getName() <<"  NodeID "<<ns3::Simulator::Now().GetSeconds()<< std::endl;
       std::cout << treeId <<"  Tree ID "<<std::endl;
       std::cout << sender <<"  sender ID"<<std::endl;
       std::cout << "( "+senderCoor <<" )  sender coordinates"<<std::endl;
@@ -238,14 +217,13 @@ SpeedyM::onAdvertPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
    }
 
    for (auto it = neighborTable.begin(); it != neighborTable.end(); it++){
-      //if(SplitString(it->first, '|').size()!=1 || it->first == sender) continue;
       std::string payload = treeId;
       payload += "|"+TreeTable[treeId].coordinate;
 
       blancHeader packetHeader;
       packetHeader.SetPacketType(Advert);
 
-      if (false) std::cout<<"Node "<<m_name<<" sending to"<<it->first<<std::endl;
+      if (false) std::cout<<"Node "<<getName()<<" sending to"<<it->first<<std::endl;
       forwardPacket(packetHeader, it->first, payload, 0);
    }
 }
@@ -253,7 +231,7 @@ SpeedyM::onAdvertPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
 void 
 SpeedyM::sendRoutePayPacket(std::string txID, std::string treeID, std::string address, double amount)
 {
-   if(std::stoi(txID) == TD) std::cout<<"Pay phase: "<<m_name<<"  "<<address<<"\n\n\n";
+   if(std::stoi(txID) == TD) std::cout<<"Pay phase: "<<getName()<<"  "<<address<<"\n\n\n";
 
    std::string nextHop = findNextHop(address, treeID, amount, "");
    if (nextHop == ""){
@@ -268,10 +246,9 @@ SpeedyM::sendRoutePayPacket(std::string txID, std::string treeID, std::string ad
    payload += treeID + "|";
    payload += address + "|";
    payload += std::to_string(amount) + "|";
-   payload += m_name;
+   payload += getName();
    forwardPacket(packetHeader, nextHop, payload, 0);
    txidTable[txID].nextHop = nextHop;
-//std::cout<<txidTable[txID].nextHop <<" "<<txID<<std::endl;
 }
 
 void 
@@ -279,7 +256,6 @@ SpeedyM::onRoutePayPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
  {
 
    std::string payload = readPayload(p);
-   //   std::cout << payload <<"  payload "<<std::endl;
 
    std::vector<std::string> items = SplitString(payload, '|');
    std::string txID = items[0];
@@ -288,7 +264,7 @@ SpeedyM::onRoutePayPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
    double amount = std::stod(items[3]);
    std::string routeList = items[4];
    if(std::stoi(txID) == TD ){   
-      std::cout << "Route Pay packet------ "<<m_name <<" NodeID "<<ns3::Simulator::Now().GetSeconds()<<std::endl;
+      std::cout << "Route Pay packet------ "<<getName() <<" NodeID "<<ns3::Simulator::Now().GetSeconds()<<std::endl;
       std::cout << txID <<"  TXiD "<<std::endl;
       std::cout << treeID <<"  treeID "<<std::endl;
       std::cout << address <<"  address "<<std::endl;
@@ -297,7 +273,6 @@ SpeedyM::onRoutePayPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
       std::cout << routeList <<"  routeList\n"<<std::endl;
 
    }
-   //m_onPayPath(std::stoi(m_name), txID);
    std::string src = findSource(s);
    txidTable[txID].src = s;
 
@@ -306,14 +281,13 @@ SpeedyM::onRoutePayPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
       return;
    }
    std::string nextHop = findNextHop(address, treeID, amount, routeList);
-   //   if(txID == "25_1") std::cout << nextHop <<"  nextHop\n\n "<<std::endl;
 
    if(nextHop == ""){
       sendNack(txID, 0);
    }
    else{
       sendRoutePayReply(txID, false);
-      payload += "/"+m_name;
+      payload += "/"+getName();
       blancHeader packetHeader;
       packetHeader.SetPacketType(PayRoute);      
       forwardPacket(packetHeader, nextHop, payload, 0);
@@ -327,9 +301,8 @@ SpeedyM::onRoutePayPacket(Ptr<Packet> p, blancHeader ph, Ptr<Socket> s)
 void 
 SpeedyM::sendRoutePayReply(std::string txID, bool complete)
 {
-   //TODO Add preimage to packet and check it at onHold
    //TODO add destinations
-   if(std::stoi(txID) == TD) std::cout<<"Pay Reply: "<<m_name<<"\n\n";
+   if(std::stoi(txID) == TD) std::cout<<"Pay Reply: "<<getName()<<"\n\n";
 
    blancHeader packetHeader;
    packetHeader.SetPacketType(RouteReply);
@@ -345,33 +318,24 @@ SpeedyM::onRoutePayReply(Ptr<Packet> p, blancHeader ph){
 
    std::string payload = readPayload(p);
 
-
    std::vector<std::string> items = SplitString(payload, '|');
    std::string txID = items[0];
 
    if (txidTable.find(txID) == txidTable.end()) return;
 
-   //if(std::stoi(txID) == TD)
-   //   std::cout << "Pay reply "<< m_name  <<"\n"<<payload <<"  TxID\n"<<std::endl;
-
-   //txidTable[txID].replied = true;
    blancHeader packetHeader;
    packetHeader.SetPacketType(RouteReply);
 
-   if(std::stoi( SplitString(txID, '_')[0]) == m_txID && items.size()>1){
+   if(std::stoi( SplitString(txID, '_')[0]) == getTxID() && items.size()>1){
       m_successful_routes++;
-      if(std::stoi(txID) == TD) std::cout<<txID<<"  "<<m_name<<" Successful routes"<<m_successful_routes<<"  "<<m_treeCount<<std::endl;
+      if(std::stoi(txID) == TD) std::cout<<txID<<"  "<<getName()<<" Successful routes"<<m_successful_routes<<"  "<<m_treeCount<<std::endl;
       if (m_successful_routes == m_treeCount){
          sendPayments(SplitString(txID, '_')[0], m_treeCount);
       }
    }
    if (txidTable[txID].src != NULL ){
-      
       //Forward next pay packet
-      //forwardPacket(packetHeader, txidTable[txID].src, payload);
       forwardPacket(packetHeader, txidTable[txID].src, payload, 0);
-      //txidTable[txID].src = NULL;
-      //txidTable.erase(txID);
    }
 }
 
@@ -430,26 +394,21 @@ SpeedyM::onPay(Ptr<Packet> p, blancHeader ph, Ptr<Socket> ){
    uint32_t txIDPrime = std::stoi(SplitString(txID, '_')[0]);
 
    if(txIDPrime == TD){   
-      std::cout << "Pay packet------ "<<m_name <<" NodeID "<<std::endl;
+      std::cout << "Pay packet------ "<<getName() <<" NodeID "<<std::endl;
       std::cout << txID <<"  TXiD "<<std::endl;
    }
-   m_onPayPath(std::stoi(m_name), txID);
+   m_onPayPath(std::stoi(getName()), txID);
    if(txidTable[txID].nextHop != ""){
       blancHeader packetHeader;
       packetHeader.SetPacketType(Pay);
       std::string payload = txID;
       txidTable[txID].nextHop;
       forwardPacket(packetHeader, txidTable[txID].nextHop, payload, 0);
-      //if( neighborTable[ txidTable[txID].nextHop ].cost == 0){
-
-      //}
    }
-   if(txIDPrime == m_txID){
+   if(txIDPrime == getTxID()){
       m_successful_routes++;
-      //std::cout<<txID<<"  "<<m_name<<" Successful routes"<<m_successful_routes<<std::endl;
       if (m_successful_routes == m_treeCount){
-         m_onPay(std::stoi(m_name), txIDPrime);
-         //std::cout<<"transaction Complete\n";
+         m_onPay(std::stoi(getName()), txIDPrime);
       }
    }
    txidTable.erase(txID);
@@ -461,15 +420,14 @@ SpeedyM::startTransaction(uint32_t txID, std::vector<std::string> addresslist, d
 {
    //Split up transaction and send through all trees
    if(txID == TD) std::cout<<txID<<std::endl;
-   m_txID = txID;
-   m_onTx(m_name, txID, true, amount);
-   TiP = true;
+   setTxID(txID);
+   m_onTx(getName(), txID, true, amount);
+   setTiP(true);
    m_successful_routes=0;
    m_treeCount = addresslist.size();
    for (int i = 0; i < addresslist.size()-1; i++){
       std::string txID_i = std::to_string(txID) +"_"+ std::to_string(i);
-      double amount_i = amount * 0.1;//(double(random() % 100000000)/ 100000000.0);
-      //amount -= amount_i;
+      double amount_i = amount * 0.1;
       std::string treeID = SplitString(addresslist[i], '|')[0];
       std::string address = SplitString(addresslist[i], '|')[1];
       sendRoutePayPacket(txID_i, treeID, address, amount_i);
@@ -482,7 +440,6 @@ SpeedyM::startTransaction(uint32_t txID, std::vector<std::string> addresslist, d
    if (m_failed) {
       m_onTxFail(txID);
       reset(txID);   
-      //std::cout<<txID<<" Interesting\n";
    }
 }
 
@@ -490,26 +447,23 @@ void
 SpeedyM::setReceiver(uint32_t txID, double amount)
 {
    //Split up transaction and send through all trees
-   //std::cout<<txID<<std::endl;
-   m_txID = txID;
-   TiP = true;
+   setTxID(txID);
+   setTiP(true);
    m_successful_routes=0;
    m_treeCount = TreeTable.size();
-   m_onTx(m_name, txID, false, amount);
+   m_onTx(getName(), txID, false, amount);
    Simulator::Schedule(Seconds(1.0), &SpeedyM::checkFail, this, txID);
 }
 
 void
 SpeedyM::reset(uint32_t txID)
 {
-   //std::cout<<"Good bye tx "<<m_name<<std::endl;
    //Determine number of segments and create the needed txIDs.
    m_amount = 0;
    m_payer = false;
-   //txidTable.erase(txID);
-   m_txID = 0;
+   setTxID(0);
    nextRH = "";
-   TiP = false; 
+   setTiP(false);
    m_failed = false;
    //TODO: Loop through all entres and delete them
 }
@@ -519,7 +473,6 @@ SpeedyM::checkTimeout(){
    for (auto each = txidTable.begin(); each != txidTable.end(); each++ ){
 
    }
-   //ns3::Simulator::Schedule(Seconds(0.001), &SpeedyM::checkTimeout, this);
 }
 
 std::string 
@@ -533,9 +486,8 @@ SpeedyM::findNextHop(std::string dest, std::string treeID, double amount, std::s
 
    int minHops = 10000000;
    std::string bestHop = "";
-   //std::cout<<"No break "<<TreeTable[treeID].parent<<"   "<<m_name<<" "<<treeID<<std::endl;
    std::string parent_name, parent_coor;
-   if (m_name != treeID){
+   if (getName() != treeID){
       parent_name = SplitString(TreeTable[treeID].parent, '|')[0];
       parent_coor = SplitString(TreeTable[treeID].parent, '|')[1];
       if (Debug) std::cout<<"Coors: "<<parent_coor<<std::endl;
@@ -549,7 +501,6 @@ SpeedyM::findNextHop(std::string dest, std::string treeID, double amount, std::s
    }
    else {
       minHops =  SplitString(dest,',').size() - getCommonPrefixsize(dest, " ");
-      //std::cout<<"No parent\n";
       if (minHops == 0) return "";
    }
 
@@ -566,7 +517,7 @@ SpeedyM::findNextHop(std::string dest, std::string treeID, double amount, std::s
       hops += SplitString(neighbor_coor,',').size() - commonSize;
       int prefix = SplitString(TreeTable[treeID].coordinate,',').size();
       int match = getCommonPrefixsize(TreeTable[treeID].coordinate, neighbor_coor);
-      if (Debug && m_name == "4183" ) std::cout<<TreeTable[treeID].coordinate << " " <<neighbor_name<<" "<<neighbor_coor<<" "<<match<<" "<< prefix <<" | ";//<<std::endl;
+      if (Debug ) std::cout<<TreeTable[treeID].coordinate << " " <<neighbor_name<<" "<<neighbor_coor<<" "<<match<<" "<< prefix <<" | ";//<<std::endl;
 
       if (hops < minHops){ 
          minHops = hops;
@@ -574,7 +525,6 @@ SpeedyM::findNextHop(std::string dest, std::string treeID, double amount, std::s
       }
    }
    if (Debug) std::cout<<std::endl;
-   //std::cout<<"Choice: "<<bestHop<<"\n"<<std::endl;  
    return bestHop;
 }
 
