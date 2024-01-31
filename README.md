@@ -1,4 +1,4 @@
-SPRITE: : Secure and Private Routing in Payment Channel Networks
+SPRITE: Secure and Private Routing in Payment Channel Networks
 ======
 
 Overview:
