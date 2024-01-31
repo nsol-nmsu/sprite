@@ -19,15 +19,17 @@ This code has been dedsigned as a ns-3 module, so after pulling that code our mo
 
 The version of ns-3 used for our expermients can be checked out with this command. 
 
-git clone https://github.com/nsol-nmsu/ndnQoS.git
+`git clone https://github.com/nsol-nmsu/ndnQoS.git`
 
 The following steps can be taken after pulling this version of ns-3 to build our codebase appropriately. 
 
-cd ndnQoS/ns-3/
-git clone https://github.com/nsol-nmsu/ndnQoS.git](https://github.com/nsol-nmsu/sprite.git src/sprite
+`cd ndnQoS/ns-3/`
 
-./waf configure --enable-examples	// configure with examples
-./waf	// build code once
+`git clone https://github.com/nsol-nmsu/sprite.git src/sprite`
+
+`./waf configure --enable-examples`
+
+`./waf`
 
 
 Running the code:
