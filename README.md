@@ -35,5 +35,6 @@ The following steps can be taken after pulling this version of ns-3 to build our
 Running the code:
 ----------------
 
-Bash scripts that run our scenarios can be found in the scripts/Scenarios folder, each script is named after the scenario it runs. 
-After running postporssing of the results can be achieved by running the script found in scripts/Post-processing named processResults.sh
+Bash scripts that run our scenarios can be found in the [scripts/Scenarios](https://github.com/nsol-nmsu/sprite/tree/main/scripts/Scenarios) folder, each script is named after the scenario it runs. 
+
+After running the experiments post-processing can be done with the script found in [scripts/Post-processing](https://github.com/nsol-nmsu/sprite/tree/main/scripts/Post-processing) named processResults.sh
