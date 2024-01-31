@@ -1,6 +1,13 @@
 SPRITE: Secure and Private Routing in Payment Channel Networks
 ======
 
+The code here is used to evaluate SPRITE which was published in ACM ASIACCS 2024.
+
+Full version of SPRITE can be found on [Cryptology ePrint Archive](https://eprint.iacr.org/2024/122)
+
+----------------
+
+
 Overview:
 ----------------
 Payment channel networks are a promising solution to the scalability challenge of blockchains and are designed for significantly increased 
