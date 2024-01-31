@@ -22,7 +22,7 @@ transactions, our approach significantly reduces the message complexity of the s
 
 Code Checkout:
 ----------------
-This code has been dedsigned as a ns-3 module, so after pulling that code our module can be placed with the src folder of ns-3. 
+This code is designed as an ns-3 module, so after pulling that code our module can be placed with the src folder of ns-3. 
 
 The version of ns-3 used for our expermients can be checked out with this command. 
 
